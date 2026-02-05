@@ -56,3 +56,4 @@ Plaintext
     Select View Bid on any item to enter the bidding room and place your maximum bid.
 
 © 2026 Gavel Auction House. All rights reserved.
+Team Gavel

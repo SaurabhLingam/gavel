@@ -1,49 +1,74 @@
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     const auctionList = document.getElementById("auction-list");
+    
+    // Safety check: only run if the auction-list container exists on the page
     if (!auctionList) return;
 
-    const auctions = [
-        { 
-            title: "Antique Vase", 
-            description: "A rare 19th-century porcelain piece with gold trim.", 
-            currentBid: 12000, // Updated for Rupees
-            image: "https://images.unsplash.com/photo-1695902047073-796e00ccd35f?q=80&w=769"
-        },
-        { 
-            title: "Vintage Watch", 
-            description: "Classic 1950s timepiece in original leather casing.", 
-            currentBid: 45000, 
-            image: "https://images.unsplash.com/photo-1524592094714-0f0654e20314?q=80&w=400"
-        },
-        { 
-            title: "Art Painting", 
-            description: "Original oil on canvas by a contemporary local artist.", 
-            currentBid: 30000, 
-            image: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=400"
-        },
-        { 
-            title: "Collector Coins", 
-            description: "A set of mint-condition historical silver coins.", 
-            currentBid: 8500, 
-            image: "https://images.unsplash.com/photo-1635946680486-09420d25eb0b?q=80&w=1170"
-        }
-    ];
-
-    auctionList.innerHTML = "";
-    const isHomepage = window.location.pathname.endsWith("index.html") || window.location.pathname === "/";
-    const displayList = isHomepage ? auctions.slice(0, 3) : auctions;
-
-    displayList.forEach(auction => {
-        const div = document.createElement("div");
-        div.classList.add("auction-item");
+    try {
+        // 1. Fetch the live auction data from the Express server
+        // This includes items added via the "Sell" page
+        const response = await fetch('/api/auctions');
         
-        div.innerHTML = `
-            <img src="${auction.image}" alt="${auction.title}" style="width:100%; height:200px; object-fit:cover; border-radius:4px; margin-bottom:15px;">
-            <h3>${auction.title}</h3>
-            <p>${auction.description}</p>
-            <p><strong>Current Bid: ₹${auction.currentBid.toLocaleString('en-IN')}</strong></p>
-            <a href="item-detail.html?item=${encodeURIComponent(auction.title)}" class="btn-primary">VIEW BID</a>
-        `;
-        auctionList.appendChild(div);
-    });
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+
+        const auctions = await response.json();
+
+        // 2. Clear out any existing placeholder content
+        auctionList.innerHTML = "";
+
+        // 3. Handle the empty floor state
+        if (auctions.length === 0) {
+            auctionList.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 50px; color: #8b6f5b; font-style: italic;">
+                    <p>The auction floor is currently quiet. No items have been consigned yet.</p>
+                </div>`;
+            return;
+        }
+
+        // 4. Determine display limit based on the current page
+        // Shows only 3 items on the homepage, but the full catalog on the Auctions page
+        const isHomepage = window.location.pathname.endsWith("index.html") || 
+                           window.location.pathname === "/" || 
+                           window.location.pathname.endsWith("/");
+        
+        const displayList = isHomepage ? auctions.slice(0, 3) : auctions;
+
+        // 5. Generate and inject the HTML for each auction item
+        displayList.forEach(item => {
+            const div = document.createElement("div");
+            div.classList.add("auction-item");
+            
+            // Logic to display a "Pending" badge for items requiring video verification review
+            const verificationBadge = !item.verified 
+                ? `<span style="position:absolute; top:10px; right:10px; background:var(--brass-gold); color:var(--polished-walnut); padding:4px 10px; font-size:0.7rem; font-weight:bold; border-radius:3px; z-index:5; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">UNVERIFIED</span>` 
+                : '';
+
+            // Note: item.image now points to the local path saved by Multer (e.g., /uploads/filename.jpg)
+            div.innerHTML = `
+                <div style="position: relative; overflow: hidden; border-radius: 4px;">
+                    ${verificationBadge}
+                    <img src="${item.image}" alt="${item.title}" style="width:100%; height:200px; object-fit:cover; transition: transform 0.5s ease;">
+                </div>
+                <div style="padding-top: 15px;">
+                    <h3 style="margin-bottom: 10px;">${item.title}</h3>
+                    <p style="height: 45px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+                        ${item.description}
+                    </p>
+                    <p style="margin: 15px 0;"><strong>Current Bid: ₹${item.currentBid.toLocaleString('en-IN')}</strong></p>
+                    <a href="item-detail.html?item=${encodeURIComponent(item.title)}" class="btn-primary" style="display: block; text-align: center;">VIEW BID</a>
+                </div>
+            `;
+            auctionList.appendChild(div);
+        });
+
+    } catch (error) {
+        console.error("Gavel Client Error:", error);
+        auctionList.innerHTML = `
+            <div style="grid-column: 1 / -1; padding: 40px; text-align: center;">
+                <p style="color: #e74c3c; font-weight: bold;">Unable to connect to the auction house floor.</p>
+                <button onclick="location.reload()" class="btn-primary" style="margin-top: 15px; padding: 10px 20px; font-size: 0.8rem;">Retry Connection</button>
+            </div>`;
+    }
 });

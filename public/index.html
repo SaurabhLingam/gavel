@@ -11,23 +11,20 @@
     <header>
         <nav class="navbar">
             <div class="logo">
-                <img src="images/logo.png" alt="Gavel Logo" class="logo-icon">
-                <span>Gavel</span>
+                <a href="index.html" style="text-decoration: none; display: flex; align-items: center; color: inherit;">
+                    <img src="images/logo.png" alt="Gavel Logo" class="logo-icon">
+                    <span>Gavel</span>
+                </a>
             </div>
             <ul class="nav-links">
-                <li><a href="login.html">Login</a></li>
-                <li><a href="signup.html">Sign Up</a></li>
-                <li><a href="auction.html">Auctions</a></li>
-                <li><a href="my-products.html">My Products</a></li>
-                <li class="nav-profile">
-                    <a href="profile.html" class="nav-avatar-initial" id="nav-avatar">G</a>
-                </li>
+                <!-- Populated by nav.js -->
             </ul>
         </nav>
     </header>
 
     <section class="hero">
-        <div class="hero-overlay"></div> <div class="hero-content">
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
             <h1>Welcome to Gavel</h1>
             <p>Step into the auction house online. Bid, win, and trade with confidence.</p>
             <div class="hero-buttons">
@@ -38,15 +35,15 @@
 
     <section id="auctions" class="auctions-section">
         <h2>Ongoing Auctions</h2>
-        <div class="auction-cards" id="auction-list">
-            </div>
+        <div class="auction-cards" id="auction-list"></div>
     </section>
+
     <section class="sell-cta">
-    <div class="cta-content">
-        <h2>Have an Item Worthy of the Gavel?</h2>
-        <p>Join our elite circle of auctioneers and reach collectors worldwide.</p>
-        <a href="sell-product.html" class="btn-primary">Sell a Product</a>
-    </div>
+        <div class="cta-content">
+            <h2>Have an Item Worthy of the Gavel?</h2>
+            <p>Join our elite circle of auctioneers and reach collectors worldwide.</p>
+            <a href="sell-product.html" class="btn-primary">Sell a Product</a>
+        </div>
     </section>
 
     <section class="how-it-works">
@@ -58,7 +55,7 @@
             </div>
             <div class="step">
                 <h3>Place Your Bids</h3>
-                <p>Monitor auctions and bid with confidence knowing the seller’s trust score.</p>
+                <p>Monitor auctions and bid with confidence knowing the seller's trust score.</p>
             </div>
             <div class="step">
                 <h3>Secure Transactions</h3>
@@ -71,6 +68,7 @@
         <p>&copy; 2026 Gavel. All rights reserved.</p>
     </footer>
 
+    <script src="js/nav.js"></script>
     <script src="js/main.js"></script>
 </body>
 </html>

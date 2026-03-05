@@ -7,26 +7,23 @@
     <link rel="stylesheet" href="css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        .bid-container { 
-            display: flex; 
-            gap: 60px; 
-            padding: 80px 50px; 
-            max-width: 1300px; 
-            margin: 0 auto; 
+        .bid-container {
+            display: flex;
+            gap: 60px;
+            padding: 80px 50px;
+            max-width: 1300px;
+            margin: 0 auto;
             align-items: flex-start;
         }
-
         .item-display { flex: 1.4; position: relative; }
-
-        .item-img { 
-            width: 100%; 
-            border-radius: 4px; 
-            border: 12px solid var(--parchment); 
+        .item-img {
+            width: 100%;
+            border-radius: 4px;
+            border: 12px solid var(--parchment);
             outline: 2px solid var(--brass-gold);
-            box-shadow: 25px 25px 50px rgba(0, 0, 0, 0.3);
+            box-shadow: 25px 25px 50px rgba(0,0,0,0.3);
             display: block;
         }
-
         .verification-label {
             display: inline-block;
             background: var(--brass-gold);
@@ -38,19 +35,17 @@
             border-radius: 2px;
             text-transform: uppercase;
         }
-
-        .bid-panel { 
-            background: var(--parchment); 
-            padding: 40px; 
-            border: 2px solid var(--brass-gold); 
-            border-radius: 4px; 
-            flex: 1; 
+        .bid-panel {
+            background: var(--parchment);
+            padding: 40px;
+            border: 2px solid var(--brass-gold);
+            border-radius: 4px;
+            flex: 1;
             box-shadow: 15px 15px 40px rgba(0,0,0,0.2);
             position: sticky;
             top: 120px;
         }
- 
-        .bid-panel h2 { 
+        .bid-panel h2 {
             font-family: 'Montserrat', sans-serif;
             color: var(--deep-oak);
             font-size: 2.2rem;
@@ -59,22 +54,16 @@
             padding-bottom: 15px;
             text-transform: uppercase;
         }
- 
-        .price-tag { 
+        .price-tag {
             font-family: 'Montserrat', sans-serif;
-            font-size: 2.5rem; 
-            color: var(--polished-walnut); 
+            font-size: 2.5rem;
+            color: var(--polished-walnut);
             font-weight: 700;
-            margin: 30px 0 10px 0; 
+            margin: 30px 0 10px 0;
+            transition: color 0.5s ease;
         }
- 
-        .lot-number {
-            color: #8b6f5b;
-            font-style: italic;
-            font-size: 0.9rem;
-            margin-bottom: 25px;
-        }
- 
+        .price-tag.updated { color: #27ae60; }
+        .lot-number { color: #8b6f5b; font-style: italic; font-size: 0.9rem; margin-bottom: 25px; }
         .bid-input-container {
             background: white;
             padding: 20px;
@@ -82,7 +71,6 @@
             border-radius: 4px;
             margin-bottom: 20px;
         }
- 
         .bid-input-container label {
             display: block;
             font-weight: bold;
@@ -91,23 +79,15 @@
             font-size: 0.8rem;
             text-transform: uppercase;
         }
- 
-        .bid-input-container input { 
-            width: 100%; 
+        .bid-input-container input {
+            width: 100%;
             border: none;
             font-size: 1.5rem;
             color: var(--polished-walnut);
             font-weight: bold;
             outline: none;
         }
- 
-        .place-bid-btn {
-            width: 100%;
-            border: none;
-            cursor: pointer;
-            font-size: 1.1rem;
-        }
- 
+        .place-bid-btn { width: 100%; border: none; cursor: pointer; font-size: 1.1rem; }
         .seller-note {
             margin-top: 30px;
             font-size: 0.85rem;
@@ -115,10 +95,86 @@
             border-top: 1px dashed #c4b4a5;
             padding-top: 20px;
         }
- 
+
+        /* Live indicator */
+        .live-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #e74c3c;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        .live-dot {
+            width: 8px; height: 8px;
+            background: white;
+            border-radius: 50%;
+            animation: pulse 1.2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Bid history */
+        .bid-history {
+            margin-top: 40px;
+            background: var(--parchment);
+            border: 2px solid var(--brass-gold);
+            border-radius: 4px;
+            padding: 30px;
+        }
+        .bid-history h3 {
+            font-family: 'Montserrat', sans-serif;
+            color: var(--deep-oak);
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            border-bottom: 1px solid #c4b4a5;
+            padding-bottom: 10px;
+        }
+        .bid-history-list { list-style: none; padding: 0; margin: 0; }
+        .bid-history-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            border-left: 4px solid var(--brass-gold);
+            background: white;
+            margin-bottom: 8px;
+            border-radius: 0 4px 4px 0;
+            font-size: 0.9rem;
+        }
+        .bid-history-list li.top-bid {
+            border-left-color: #27ae60;
+            background: #f0fff4;
+        }
+        .bid-history-list li .bidder { color: #5c4033; font-weight: bold; }
+        .bid-history-list li .amount { color: var(--polished-walnut); font-weight: bold; font-size: 1rem; }
+        .bid-history-list li .time { color: #aaa; font-size: 0.75rem; }
+        .no-bids { color: #8b6f5b; font-style: italic; text-align: center; padding: 20px 0; }
+
+        /* Login prompt */
+        .login-to-bid {
+            background: #fff8e7;
+            border: 1px dashed var(--brass-gold);
+            border-radius: 4px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .login-to-bid p { margin: 0 0 10px 0; color: #5c4033; font-size: 0.9rem; }
+
         @media (max-width: 900px) {
             .bid-container { flex-direction: column; padding: 40px 20px; }
-            .bid-panel { position: static; width: 100%; }
+            .bid-panel { position: static; width: 100%; box-sizing: border-box; }
         }
     </style>
 </head>
@@ -126,53 +182,49 @@
 
 <header>
     <nav class="navbar">
-          <div class="logo">
-                <a href="index.html" style="text-decoration: none; display: flex; align-items: center; color: inherit;">
-                    <img src="images/logo.png" alt="Gavel Logo" class="logo-icon">
-                    <span>Gavel</span>
-                </a>
-            </div>
-            <ul class="nav-links">
-                <li><a href="login.html">Login</a></li>
-                <li><a href="signup.html">Sign Up</a></li>
-                <li><a href="auction.html">Auctions</a></li>
-                <li><a href="my-products.html">My Products</a></li>
-                <li class="nav-profile">
-                    <a href="profile.html" class="nav-avatar-initial" id="nav-avatar">G</a>
-                </li>
-            </ul>
+        <div class="logo">
+            <a href="index.html" style="text-decoration: none; display: flex; align-items: center; color: inherit;">
+                <img src="images/logo.png" alt="Gavel Logo" class="logo-icon">
+                <span>Gavel</span>
+            </a>
+        </div>
+        <ul class="nav-links"><!-- Populated by nav.js --></ul>
     </nav>
 </header>
 
 <main class="bid-container">
     <div class="item-display">
         <img id="display-img" class="item-img" src="" alt="Item">
-
         <div id="verification-section" style="display:none; margin-top:30px;">
             <span class="verification-label">360° Verification Footage</span>
             <video id="display-video" controls style="width:100%; margin-top:10px;"></video>
         </div>
+
+        <!-- Bid history below the image -->
+        <div class="bid-history">
+            <h3>Bid History</h3>
+            <ul class="bid-history-list" id="bid-history-list">
+                <li class="no-bids">No bids have been placed yet.</li>
+            </ul>
+        </div>
     </div>
 
     <div class="bid-panel">
-        <p class="lot-number">Live Auction • Lot #8821</p>
+        <p class="lot-number">
+            Live Auction
+            <span class="live-badge"><span class="live-dot"></span>Live</span>
+        </p>
         <h2 id="display-title">Loading...</h2>
 
-        <div class="price-tag">₹<span id="display-price">0</span></div>
-        <p style="margin-top:-10px; font-weight:bold;">Current Highest Bid</p>
+        <div class="price-tag" id="price-tag">₹<span id="display-price">0</span></div>
+        <p style="margin-top:-10px; font-weight:bold; color:#8b6f5b;" id="bid-count-label">Current Highest Bid</p>
 
-        <div class="bid-input-container">
-            <label for="bid-amount">Set Your Maximum Bid</label>
-            <div style="display:flex; align-items:center;">
-                <span style="font-size:1.5rem; font-weight:bold; margin-right:5px;">₹</span>
-                <input type="number" id="bid-amount" placeholder="Enter amount">
-            </div>
+        <div id="bid-form-area">
+            <!-- Populated by JS based on login state -->
         </div>
 
-        <button class="btn-primary place-bid-btn">PLACE YOUR BID</button>
-
         <div class="seller-note">
-            <strong>Auctioneer's Note:</strong> Verified bidders only.
+            <strong>Auctioneer's Note:</strong> All bids are binding. Verified bidders only.
         </div>
     </div>
 </main>
@@ -181,80 +233,159 @@
     <p>&copy; 2026 Gavel. All rights reserved.</p>
 </footer>
 
+<script src="js/nav.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', async () => {
 
     const urlParams = new URLSearchParams(window.location.search);
-    const itemName = urlParams.get('item');
-
+    const itemName  = urlParams.get('item');
     if (!itemName) return;
 
+    // 1. Check who's logged in
+    let currentUser = null;
+    try {
+        const meRes  = await fetch('/api/me');
+        const meData = await meRes.json();
+        if (meData.loggedIn) currentUser = meData.user;
+    } catch(e) {}
+
+    // 2. Load item data
     try {
         const response = await fetch('/api/auctions');
-        const auctions = await response.json();
-
-        const itemData = auctions.find(a => a.title === decodeURIComponent(itemName));
-
-        if (!itemData) return;
+        const auctions  = await response.json();
+        const itemData  = auctions.find(a => a.title === decodeURIComponent(itemName));
+        if (!itemData) {
+            document.getElementById('display-title').textContent = 'Item not found.';
+            return;
+        }
 
         window.currentItemId = itemData.id;
 
         document.getElementById('display-title').textContent = itemData.title;
-        document.getElementById('display-img').src = itemData.image;
-        document.getElementById('display-price').textContent =
-            itemData.currentBid.toLocaleString('en-IN');
+        document.getElementById('display-img').src           = itemData.image;
+        document.getElementById('display-price').textContent = itemData.currentBid.toLocaleString('en-IN');
+        document.getElementById('bid-count-label').textContent =
+            `${itemData.bidCount || 0} bid${itemData.bidCount !== 1 ? 's' : ''} placed`;
 
         if (itemData.verificationVideo) {
             document.getElementById('verification-section').style.display = 'block';
             document.getElementById('display-video').src = itemData.verificationVideo;
         }
 
+        // 3. Render bid form OR login prompt
+        const bidFormArea = document.getElementById('bid-form-area');
+        const isSeller = currentUser && currentUser.email === itemData.sellerEmail;
+
+        if (!currentUser) {
+            bidFormArea.innerHTML = `
+                <div class="login-to-bid">
+                    <p>You must be logged in to place a bid.</p>
+                    <a href="/login.html" class="btn-primary" style="display:inline-block; padding:12px 30px;">Sign In to Bid</a>
+                </div>`;
+        } else if (isSeller) {
+            bidFormArea.innerHTML = `
+                <div class="login-to-bid">
+                    <p>This is your listing — you cannot bid on your own item.</p>
+                </div>`;
+        } else {
+            bidFormArea.innerHTML = `
+                <div class="bid-input-container">
+                    <label for="bid-amount">Your Bid (₹)</label>
+                    <div style="display:flex; align-items:center;">
+                        <span style="font-size:1.5rem; font-weight:bold; margin-right:5px;">₹</span>
+                        <input type="number" id="bid-amount" placeholder="Enter amount">
+                    </div>
+                </div>
+                <button class="btn-primary place-bid-btn" id="place-bid-btn">PLACE YOUR BID</button>
+            `;
+
+            document.getElementById('place-bid-btn').addEventListener('click', async () => {
+                const bidInput  = document.getElementById('bid-amount');
+                const bidAmount = Number(bidInput.value);
+                if (!bidAmount || bidAmount <= 0) { alert("Enter a valid bid amount"); return; }
+
+                try {
+                    const res  = await fetch('/api/place-bid', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: window.currentItemId, bidAmount })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) { alert(data.message); return; }
+
+                    bidInput.value = "";
+                    // Price update handled by WebSocket broadcast
+                } catch (err) {
+                    console.error("Bid error:", err);
+                    alert("Failed to place bid.");
+                }
+            });
+        }
+
+        // 4. Load bid history
+        await loadBidHistory(itemData.id);
+
+        // 5. WebSocket for real-time updates
+        const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${protocol}://${location.host}`);
+
+        ws.addEventListener('open', () => {
+            ws.send(JSON.stringify({ type: 'watch', itemId: itemData.id }));
+        });
+
+        ws.addEventListener('message', (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'bid_update' && msg.itemId === window.currentItemId) {
+                // Animate the price change
+                const priceEl   = document.getElementById('display-price');
+                const priceTag  = document.getElementById('price-tag');
+                const countEl   = document.getElementById('bid-count-label');
+
+                priceEl.textContent  = msg.newBid.toLocaleString('en-IN');
+                countEl.textContent  = `${msg.bidCount} bid${msg.bidCount !== 1 ? 's' : ''} placed`;
+
+                priceTag.classList.add('updated');
+                setTimeout(() => priceTag.classList.remove('updated'), 1500);
+
+                // Refresh bid history
+                loadBidHistory(window.currentItemId);
+            }
+        });
+
     } catch (err) {
         console.error("Error loading item:", err);
     }
 });
 
-
-document.querySelector('.place-bid-btn').addEventListener('click', async () => {
-
-    const bidInput = document.getElementById('bid-amount');
-    const bidAmount = Number(bidInput.value);
-
-    if (!bidAmount || bidAmount <= 0) {
-        alert("Enter a valid bid amount");
-        return;
-    }
-
+async function loadBidHistory(itemId) {
     try {
-        const response = await fetch('/api/place-bid', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                id: window.currentItemId,
-                bidAmount
-            })
-        });
+        const res  = await fetch(`/api/bid-history/${itemId}`);
+        const data = await res.json();
+        const list = document.getElementById('bid-history-list');
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            alert(data.message);
+        if (!data.length) {
+            list.innerHTML = '<li class="no-bids">No bids have been placed yet. Be the first!</li>';
             return;
         }
 
-        document.getElementById('display-price').textContent =
-            data.newBid.toLocaleString('en-IN');
-
-        bidInput.value = "";
-        alert("Bid placed successfully!");
-
-    } catch (err) {
-        console.error("Bid error:", err);
-        alert("Failed to place bid");
+        list.innerHTML = data.map((bid, i) => `
+            <li class="${i === 0 ? 'top-bid' : ''}">
+                <span class="bidder">${bid.bidderName}</span>
+                <span class="amount">₹${Number(bid.amount).toLocaleString('en-IN')}</span>
+                <span class="time">${formatTime(bid.placed_at)}</span>
+            </li>
+        `).join('');
+    } catch (e) {
+        console.error("Bid history error:", e);
     }
-});
+}
+
+function formatTime(isoString) {
+    const d = new Date(isoString);
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) +
+           ', ' + d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
 </script>
 
 </body>
 </html>
-

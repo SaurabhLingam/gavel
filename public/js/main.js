@@ -1,24 +1,14 @@
 document.addEventListener("DOMContentLoaded", async () => {
     const auctionList = document.getElementById("auction-list");
-    
-    // Safety check: only run if the auction-list container exists on the page
     if (!auctionList) return;
 
     try {
-        // 1. Fetch the live auction data from the Express server
-        // This includes items added via the "Sell" page
         const response = await fetch('/api/auctions');
-        
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-
+        if (!response.ok) throw new Error('Network response was not ok');
         const auctions = await response.json();
 
-        // 2. Clear out any existing placeholder content
         auctionList.innerHTML = "";
 
-        // 3. Handle the empty floor state
         if (auctions.length === 0) {
             auctionList.innerHTML = `
                 <div style="grid-column: 1 / -1; padding: 50px; color: #8b6f5b; font-style: italic;">
@@ -27,25 +17,20 @@ document.addEventListener("DOMContentLoaded", async () => {
             return;
         }
 
-        // 4. Determine display limit based on the current page
-        // Shows only 3 items on the homepage, but the full catalog on the Auctions page
-        const isHomepage = window.location.pathname.endsWith("index.html") || 
-                           window.location.pathname === "/" || 
+        const isHomepage = window.location.pathname.endsWith("index.html") ||
+                           window.location.pathname === "/" ||
                            window.location.pathname.endsWith("/");
-        
+
         const displayList = isHomepage ? auctions.slice(0, 3) : auctions;
 
-        // 5. Generate and inject the HTML for each auction item
         displayList.forEach(item => {
             const div = document.createElement("div");
             div.classList.add("auction-item");
-            
-            // Logic to display a "Pending" badge for items requiring video verification review
-            const verificationBadge = !item.verified 
-                ? `<span style="position:absolute; top:10px; right:10px; background:var(--brass-gold); color:var(--polished-walnut); padding:4px 10px; font-size:0.7rem; font-weight:bold; border-radius:3px; z-index:5; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">UNVERIFIED</span>` 
+
+            const verificationBadge = !item.verified
+                ? `<span style="position:absolute; top:10px; right:10px; background:var(--brass-gold); color:var(--polished-walnut); padding:4px 10px; font-size:0.7rem; font-weight:bold; border-radius:3px; z-index:5; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">UNVERIFIED</span>`
                 : '';
 
-            // Note: item.image now points to the local path saved by Multer (e.g., /uploads/filename.jpg)
             div.innerHTML = `
                 <div style="position: relative; overflow: hidden; border-radius: 4px;">
                     ${verificationBadge}

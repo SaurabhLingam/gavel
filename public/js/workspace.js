@@ -4,7 +4,9 @@
         me: null,
         summary: null,
         chats: [],
-        reviewDraft: null
+        reviewDraft: null,
+        notifications: [],
+        seenAssignmentIds: []
     };
 
     const viewMeta = {
@@ -48,24 +50,111 @@
 
         state.me = meData.user;
 
-        const [summaryRes, chatsRes] = await Promise.allSettled([
-            fetch('/api/dashboard/summary'),
-            fetch('/api/my-chats')
+        const requests = await Promise.allSettled([
+            fetch('/api/profile'),
+            fetch('/api/my-listings'),
+            fetch('/api/my-bids'),
+            fetch('/api/watchlist'),
+            fetch('/api/notifications'),
+            fetch('/api/chat/my-chats/list'),
+            state.me.isAdmin ? fetch('/api/admin/review') : Promise.resolve(null),
+            state.me.isSuperAdmin ? fetch('/api/admin/team-overview') : Promise.resolve(null),
+            state.me.isSuperAdmin ? fetch('/api/admin/users') : Promise.resolve(null)
         ]);
 
-        if (summaryRes.status !== 'fulfilled' || !summaryRes.value.ok) {
+        if (requests[0].status !== 'fulfilled' || !requests[0].value.ok) {
             renderError('Failed to load workspace summary.');
             return;
         }
 
-        state.summary = await summaryRes.value.json();
-        if (chatsRes.status === 'fulfilled' && chatsRes.value.ok) {
-            state.chats = await chatsRes.value.json();
-        }
+        const [
+            profileRes, listingsRes, bidsRes, watchlistRes, notificationsRes, chatsRes, reviewRes, teamRes, usersRes
+        ] = requests;
+
+        const profile = await profileRes.value.json();
+        const listings = listingsRes.status === 'fulfilled' && listingsRes.value && listingsRes.value.ok ? await listingsRes.value.json() : [];
+        const bids = bidsRes.status === 'fulfilled' && bidsRes.value && bidsRes.value.ok ? await bidsRes.value.json() : [];
+        const watchlist = watchlistRes.status === 'fulfilled' && watchlistRes.value && watchlistRes.value.ok ? await watchlistRes.value.json() : [];
+        state.notifications = notificationsRes.status === 'fulfilled' && notificationsRes.value && notificationsRes.value.ok ? await notificationsRes.value.json() : [];
+        state.chats = chatsRes.status === 'fulfilled' && chatsRes.value && chatsRes.value.ok ? await chatsRes.value.json() : [];
+        const reviewQueue = reviewRes && reviewRes.status === 'fulfilled' && reviewRes.value && reviewRes.value.ok ? await reviewRes.value.json() : [];
+        const team = teamRes && teamRes.status === 'fulfilled' && teamRes.value && teamRes.value.ok ? await teamRes.value.json() : [];
+        const users = usersRes && usersRes.status === 'fulfilled' && usersRes.value && usersRes.value.ok ? await usersRes.value.json() : [];
+
+        state.summary = buildWorkspaceSummary(profile, listings, bids, watchlist, state.notifications, reviewQueue, team, users);
 
         hydrateChrome();
         renderView();
+        startAdminPresence();
         bindActions();
+        startNotificationPolling();
+    }
+
+    function buildWorkspaceSummary(profile, listings, bids, watchlist, notifications, reviewQueue, team, users) {
+        const me = {
+            id: profile.id,
+            email: profile.email,
+            fullname: profile.name,
+            walletBalance: profile.walletBalance || 0,
+            trustScore: Number(profile.trustScore || 0),
+            role: profile.role,
+            isAdmin: Boolean(state.me.isAdmin),
+            isSuperAdmin: Boolean(state.me.isSuperAdmin)
+        };
+
+        return {
+            me: me,
+            stats: {
+                activeListings: profile.stats && profile.stats.activeListings || 0,
+                pendingListings: profile.stats && profile.stats.pendingListings || 0,
+                rejectedListings: profile.stats && profile.stats.rejectedListings || 0,
+                soldListings: profile.stats && profile.stats.closedListings || 0,
+                activeBids: profile.stats && profile.stats.activeBids || 0,
+                wonPurchases: profile.stats && profile.stats.auctionsWon || 0,
+                watchlistCount: profile.stats && profile.stats.watchlistCount || 0,
+                unreadNotifications: (notifications || []).filter(function(item) { return !item.read; }).length,
+                totalVolume: 0,
+                platformUsers: 0,
+                activeAuctions: 0
+            },
+            listings: listings || [],
+            bids: bids || [],
+            watchlist: watchlist || [],
+            notifications: notifications || [],
+            adminWorkspace: {
+                assignedRequests: reviewQueue || []
+            },
+            superAdminWorkspace: {
+                reviewQueue: reviewQueue || [],
+                admins: (team || []).map(function(admin) {
+                    return {
+                        id: admin.id,
+                        fullname: admin.fullname,
+                        email: admin.email,
+                        isSuperAdmin: admin.isSuperAdmin,
+                        assignedCount: admin.assignedProducts || 0,
+                        approvedCount: admin.approvedProducts || 0,
+                        rejectedCount: admin.rejectedProducts || 0,
+                        online: Boolean(admin.online),
+                        assignedItems: []
+                    };
+                }),
+                candidates: (users || []).filter(function(user) {
+                    return !user.isAdmin && !user.isSuperAdmin && user.role !== 'admin';
+                }).map(function(user) {
+                    return { id: user._id, fullname: user.fullname, email: user.email, role: user.role || 'bidder' };
+                }),
+                metrics: {
+                    unassigned: (reviewQueue || []).filter(function(item) { return !item.assignedAdminEmail; }).length,
+                    underReview: (reviewQueue || []).filter(function(item) { return item.status === 'under_review'; }).length,
+                    rejected: (reviewQueue || []).filter(function(item) { return item.status === 'rejected'; }).length
+                },
+                assignableReviewers: (team || []).filter(function(admin) { return admin.online; }).map(function(admin) {
+                    return { fullname: admin.fullname, email: admin.email };
+                }),
+                rejectionLog: (reviewQueue || []).filter(function(item) { return item.status === 'rejected'; })
+            }
+        };
     }
 
     function hydrateChrome() {
@@ -87,7 +176,8 @@
         ];
 
         if (user.isAdmin) {
-            tabs.push({ key: 'review', label: 'Review', href: '/workspace/review.html' });
+            var reviewCount = state.summary.adminWorkspace && state.summary.adminWorkspace.assignedRequests ? state.summary.adminWorkspace.assignedRequests.length : 0;
+            tabs.push({ key: 'review', label: 'Review' + (reviewCount ? ' <span class="sidebar-badge">' + reviewCount + '</span>' : ''), href: '/workspace/review.html' });
         }
         if (user.isSuperAdmin) {
             tabs.push({ key: 'governance', label: 'Super Admin', href: '/workspace/governance.html' });
@@ -307,13 +397,13 @@
         }
 
         return '<div class="workspace-chat-list">' + items.map(function(item) {
-            var preview = item.lastMessage && item.lastMessage.message ? item.lastMessage.message : 'No messages yet.';
+            var preview = item.lastMessage && item.lastMessage.message ? item.lastMessage.message : (item.lastMessage || 'No messages yet.');
             return '<article class="workspace-chat-card">' +
                 '<div class="workspace-chat-avatar">' + escapeHtml((item.otherName || 'C').charAt(0).toUpperCase()) + '</div>' +
                 '<div class="workspace-chat-main">' +
                     '<div class="workspace-chat-head">' +
                         '<div><span class="workspace-item-title">' + escapeHtml(item.otherName || 'Counterparty') + '</span><div class="workspace-item-meta">' + escapeHtml(item.auctionTitle) + '</div></div>' +
-                        (Number(item.unread || 0) ? '<span class="workspace-chat-unread">' + Number(item.unread || 0).toLocaleString('en-IN') + '</span>' : '<span class="workspace-item-meta">Read</span>') +
+                        (Number(item.unread || item.unreadCount || 0) ? '<span class="workspace-chat-unread">' + Number(item.unread || item.unreadCount || 0).toLocaleString('en-IN') + '</span>' : '<span class="workspace-item-meta">Read</span>') +
                     '</div>' +
                     '<div class="workspace-chat-preview">' + escapeHtml(preview) + '</div>' +
                     '<div class="workspace-actions"><a class="workspace-inline-button" href="/chat.html?auction=' + encodeURIComponent(item.auctionId) + '&with=' + encodeURIComponent(item.otherEmail || '') + '">Open Conversation</a></div>' +
@@ -385,8 +475,12 @@
 
         return '<div class="workspace-list">' + items.map(function(item) {
             var mediaThumbs = (item.images || []).slice(0, 3).map(function(src) {
-                return '<img src="' + escapeAttribute(src) + '" alt="' + escapeAttribute(item.title) + '" class="workspace-review-thumb">';
+                return '<img src="' + escapeAttribute(src) + '" alt="' + escapeAttribute(item.title) + '" class="workspace-review-thumb" draggable="true" data-review-image="' + escapeAttribute(src) + '" data-review-auction="' + escapeAttribute(item.id) + '">';
             }).join('');
+            var specs = normalizeSpecifications(item.specifications);
+            var specsMarkup = specs.length
+                ? '<div class="workspace-review-specs">' + specs.map(function(entry) { return '<div><strong>' + escapeHtml(entry[0]) + ':</strong> ' + escapeHtml(entry[1]) + '</div>'; }).join('') + '</div>'
+                : '';
             var checklist = [
                 'Images and video are clear and usable',
                 'No human face is visible in the media',
@@ -398,12 +492,15 @@
             }).join('');
             return '<article class="workspace-card">' +
                 '<span class="workspace-item-title">' + escapeHtml(item.title) + '</span>' +
-                '<div class="workspace-item-meta">' + escapeHtml(item.category || 'General') + ' · Seller: ' + escapeHtml(item.sellerEmail || '') + '</div>' +
-                '<div class="workspace-review-media">' + mediaThumbs + (item.videoUrl ? '<span class="workspace-review-video">Video attached</span>' : '') + '</div>' +
-                '<div class="workspace-item-meta" style="margin-top:8px;">' + escapeHtml((item.description || '').slice(0, 180)) + '</div>' +
+                '<div class="workspace-item-meta">' + escapeHtml(item.category || 'General') + ' · Seller: ' + escapeHtml(item.sellerEmail || '') + ' · Start ' + formatCurrency(item.startingPrice || item.currentBid || 0) + '</div>' +
+                '<div class="workspace-review-media">' + mediaThumbs + (item.video || item.videoUrl ? '<span class="workspace-review-video">Video attached</span>' : '') + '</div>' +
+                '<div class="workspace-item-meta" style="margin-top:8px;white-space:pre-wrap;">' + escapeHtml(item.description || '') + '</div>' +
+                '<div class="workspace-item-meta" style="margin-top:8px;">Condition: ' + escapeHtml(extractCondition(item) || 'Not specified') + '</div>' +
+                specsMarkup +
                 '<div class="workspace-review-checklist">' + checklist + '</div>' +
                 '<div class="workspace-actions">' +
                     '<a class="workspace-inline-button" href="/item-detail.html?id=' + encodeURIComponent(item.id) + '">View Lot</a>' +
+                    '<button class="workspace-inline-button" type="button" data-save-image-order="' + escapeAttribute(item.id) + '">Save Image Order</button>' +
                     '<button class="workspace-inline-button" data-review-open="' + escapeAttribute(item.id) + '" data-review-decision="approve" type="button" data-review-title="' + escapeAttribute(item.title) + '">Approve</button>' +
                     '<button class="workspace-inline-button danger" data-review-open="' + escapeAttribute(item.id) + '" data-review-decision="reject" type="button" data-review-title="' + escapeAttribute(item.title) + '">Reject</button>' +
                 '</div>' +
@@ -438,7 +535,7 @@
                             : '<div class="workspace-item-meta" style="margin-top:6px;">No pending products under this reviewer.</div>';
                         return '<tr>' +
                             '<td><span class="workspace-item-title">' + escapeHtml(admin.fullname) + '</span><div class="workspace-item-meta">' + escapeHtml(admin.email) + '</div>' + assignedItems + '</td>' +
-                            '<td>' + (admin.isSuperAdmin ? '<span class="workspace-pill success">Super Admin</span>' : '<span class="workspace-pill">Admin</span>') + '</td>' +
+                            '<td>' + (admin.isSuperAdmin ? '<span class="workspace-pill success">Super Admin</span>' : '<span class="workspace-pill">Admin</span>') + '<div class="workspace-item-meta" style="margin-top:6px;">' + (admin.online ? 'Online' : 'Offline') + '</div></td>' +
                             '<td>' + Number(admin.assignedCount || 0).toLocaleString('en-IN') + '</td>' +
                             '<td>' + Number(admin.approvedCount || 0).toLocaleString('en-IN') + '</td>' +
                             '<td>' + Number(admin.rejectedCount || 0).toLocaleString('en-IN') + '</td>' +
@@ -454,19 +551,19 @@
                 '</section>' +
                 '<section class="workspace-panel workspace-col-6">' +
                     '<div class="workspace-panel-header"><div><h2 class="workspace-section-title">Workflow Notes</h2><p class="workspace-section-subtitle">Keep moderation predictable.</p></div></div>' +
-                    '<div class="workspace-note">Auto Assign only picks unassigned `pending_review` listings, then moves them to `under_review`.</div>' +
+                    '<div class="workspace-note">Auto Assign only uses admins who are currently online in the review workspace. If nobody is online, requests stay queued until an admin connects.</div>' +
                     '<div class="workspace-note" style="margin-top:12px;">Every promoted admin should read the <a href="/admin-handbook.html" class="workspace-inline-button" style="display:inline-flex; margin-left:8px;">Admin Handbook</a> before reviewing products.</div>' +
                     '<div class="workspace-note" style="margin-top:12px;">Admin access no longer changes a user&apos;s buyer or seller role. It only controls review permissions.</div>' +
                 '</section>' +
                 '<section class="workspace-panel workspace-col-12">' +
                     '<div class="workspace-panel-header"><div><h2 class="workspace-section-title">Review Queue</h2><p class="workspace-section-subtitle">Auto-assign is always available, and manual assignment stays visible here.</p></div></div>' +
-                    (reviewQueue.length ? '<div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>Listing</th><th>Status</th><th>Assigned Admin</th><th>Assignment</th><th>Action</th></tr></thead><tbody>' + reviewQueue.map(function(item) {
+                    (reviewQueue.length ? '<div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>Listing</th><th>Status</th><th>Assigned Admin</th><th>Assignment</th><th>Views</th><th>Action</th></tr></thead><tbody>' + reviewQueue.map(function(item) {
                         var options = '<option value="">Unassigned</option>' + assignableReviewers.map(function(reviewer) {
                             var selected = reviewer.email === item.assignedAdminEmail ? ' selected' : '';
                             return '<option value="' + escapeAttribute(reviewer.email) + '"' + selected + '>' + escapeHtml(reviewer.fullname + ' (' + reviewer.email + ')') + '</option>';
                         }).join('');
                         var action = '<a class="workspace-inline-button" href="/item-detail.html?id=' + encodeURIComponent(item.id) + '">Inspect</a>';
-                        return '<tr><td><span class="workspace-item-title">' + escapeHtml(item.title) + '</span><div class="workspace-item-meta">' + escapeHtml(item.sellerEmail || '') + '</div></td><td>' + statusPill(item.status, item.verified) + '</td><td>' + escapeHtml(item.assignedAdminEmail || 'Unassigned') + '</td><td><div class="workspace-assign-row"><select class="workspace-assign-select" data-assign-listing="' + escapeAttribute(item.id) + '">' + options + '</select><button class="workspace-inline-button" type="button" data-assign-save="' + escapeAttribute(item.id) + '">Save</button></div></td><td>' + action + '</td></tr>';
+                        return '<tr><td><span class="workspace-item-title">' + escapeHtml(item.title) + '</span><div class="workspace-item-meta">' + escapeHtml(item.sellerEmail || '') + '</div></td><td>' + statusPill(item.status, item.verified) + '</td><td>' + escapeHtml(item.assignedAdminEmail || 'Unassigned') + '</td><td><div class="workspace-assign-row"><select class="workspace-assign-select" data-assign-listing="' + escapeAttribute(item.id) + '">' + options + '</select><button class="workspace-inline-button" type="button" data-assign-save="' + escapeAttribute(item.id) + '">Save</button></div></td><td>' + Number(item.viewCount || 0).toLocaleString('en-IN') + '</td><td>' + action + '</td></tr>';
                     }).join('') + '</tbody></table></div>' : emptyMarkup('No requests in the global queue.')) +
                 '</section>' +
                 '<section class="workspace-panel workspace-col-12">' +
@@ -507,6 +604,10 @@
 
             if (target.matches('[data-assign-save]')) {
                 await handleListingAssignment(target);
+            }
+
+            if (target.matches('[data-save-image-order]')) {
+                await saveImageOrder(target.getAttribute('data-save-image-order'));
             }
 
             if (target.id === 'auto-assign-requests') {
@@ -627,7 +728,7 @@
             window.alert(data.error || 'Failed to auto assign requests.');
             return;
         }
-        window.alert('Assigned ' + Number(data.assignedCount || 0).toLocaleString('en-IN') + ' requests.');
+        window.alert('Assigned ' + Number(data.assignedCount || 0).toLocaleString('en-IN') + ' requests. ' + Number(data.queuedCount || 0).toLocaleString('en-IN') + ' remain queued.');
         window.location.reload();
     }
 
@@ -658,6 +759,102 @@
             noViolenceOrHarm: Boolean(checks[3] && checks[3].checked),
             categoryAndClaimsVerified: Boolean(checks[4] && checks[4].checked)
         };
+    }
+
+    async function saveImageOrder(listingId) {
+        var images = Array.from(document.querySelectorAll('[data-review-auction="' + listingId + '"][data-review-image]')).map(function(node) {
+            return node.getAttribute('data-review-image');
+        });
+        const res = await fetch('/api/admin/auctions/' + encodeURIComponent(listingId) + '/reorder-images', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ images: images })
+        });
+        const data = await res.json().catch(function() { return {}; });
+        if (!res.ok) {
+            window.alert(data.error || 'Failed to reorder images.');
+            return;
+        }
+        window.alert('Image order saved.');
+    }
+
+    function startAdminPresence() {
+        if (!state.me || !state.me.email || !(state.me.isAdmin || state.me.isSuperAdmin)) return;
+        fetch('/api/admin/process-queued-assignments', { method: 'POST' }).catch(function() { return null; });
+        initReviewDragAndDrop();
+    }
+
+    function startNotificationPolling() {
+        if (!state.me || !(state.me.isAdmin || state.me.isSuperAdmin)) return;
+        state.seenAssignmentIds = (state.notifications || []).filter(function(item) {
+            return item.type === 'sell_request_assigned';
+        }).map(function(item) { return String(item._id); });
+
+        window.setInterval(async function() {
+            const res = await fetch('/api/notifications');
+            if (!res.ok) return;
+            const items = await res.json();
+            items.filter(function(item) {
+                return item.type === 'sell_request_assigned' && state.seenAssignmentIds.indexOf(String(item._id)) === -1;
+            }).forEach(function(item) {
+                state.seenAssignmentIds.push(String(item._id));
+                showWorkspaceToast(item.message || 'New item assigned');
+            });
+        }, 15000);
+    }
+
+    function showWorkspaceToast(message) {
+        var container = document.getElementById('workspace-toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'workspace-toast-container';
+            container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:12px;';
+            document.body.appendChild(container);
+        }
+        var toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style.cssText = 'background:#2c2417;color:#faf7f2;padding:12px 16px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.18);max-width:320px;';
+        container.appendChild(toast);
+        if (window.Auth && typeof Auth.notify === 'function') {
+            Auth.notify('Admin Assignment', message);
+        }
+        window.setTimeout(function() { toast.remove(); }, 4000);
+    }
+
+    function initReviewDragAndDrop() {
+        var dragged = null;
+        document.querySelectorAll('[data-review-image]').forEach(function(node) {
+            node.addEventListener('dragstart', function() {
+                dragged = node;
+            });
+            node.addEventListener('dragover', function(event) {
+                event.preventDefault();
+            });
+            node.addEventListener('drop', function(event) {
+                event.preventDefault();
+                if (!dragged || dragged === node || dragged.getAttribute('data-review-auction') !== node.getAttribute('data-review-auction')) return;
+                node.parentNode.insertBefore(dragged, node);
+            });
+        });
+    }
+
+    function normalizeSpecifications(specifications) {
+        if (!specifications) return [];
+        if (Array.isArray(specifications)) {
+            return specifications.filter(Boolean).map(function(value, index) { return ['Spec ' + (index + 1), String(value)]; });
+        }
+        if (typeof specifications === 'object') {
+            return Object.keys(specifications).filter(function(key) { return specifications[key]; }).map(function(key) { return [key, String(specifications[key])]; });
+        }
+        return [];
+    }
+
+    function extractCondition(item) {
+        if (item.condition) return item.condition;
+        var specs = item.specifications || {};
+        if (specs.Condition) return specs.Condition;
+        if (specs.condition) return specs.condition;
+        return '';
     }
 
     async function triggerEarlySell(id) {

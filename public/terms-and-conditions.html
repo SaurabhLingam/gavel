@@ -1,95 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terms and Conditions | Gavel</title>
-    <link rel="stylesheet" href="css/style.css">
-    <style>
-        .terms-shell {
-            max-width: 980px;
-            margin: 0 auto;
-            padding: 56px 20px 88px;
-        }
-
-        .terms-card {
-            background: rgba(189, 221, 252, 0.08);
-            border: 1px solid var(--border-color);
-            border-radius: 28px;
-            padding: 34px;
-            box-shadow: 0 24px 60px rgba(20, 28, 34, 0.18);
-        }
-
-        .terms-card h1,
-        .terms-card h2 {
-            font-family: var(--font-heading);
-            color: var(--text-primary);
-        }
-
-        .terms-card h1 {
-            margin: 0 0 12px;
-            font-size: clamp(2.2rem, 5vw, 3.2rem);
-        }
-
-        .terms-card h2 {
-            margin: 28px 0 10px;
-            font-size: 1.18rem;
-        }
-
-        .terms-card p,
-        .terms-card li {
-            color: var(--text-secondary);
-            line-height: 1.72;
-        }
-
-        .terms-card ul {
-            padding-left: 20px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms & Conditions — Gavel</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="icon" href="images/logo.png">
 </head>
-<body>
-    <main class="terms-shell">
-        <article class="terms-card">
-            <h1>Terms and Conditions</h1>
-            <p>By listing, bidding, messaging, or using the wallet on Gavel, you agree to the terms below.</p>
-
-            <h2>Seller Responsibilities</h2>
-            <ul>
-                <li>You must own the product or be authorized to sell it.</li>
-                <li>Images, video, category, and description must represent the real product accurately.</li>
-                <li>You must disclose notable wear, defects, missing accessories, and authenticity limitations.</li>
-                <li>Gavel may reject, pause, or remove listings that are incomplete, misleading, prohibited, or unsafe.</li>
-            </ul>
-
-            <h2>Bid And Auction Rules</h2>
-            <ul>
-                <li>Bids are binding once submitted.</li>
-                <li>Wallet-backed bidding may place holds or deductions according to the active auction rules.</li>
-                <li>Closing times, reserve handling, anti-snipe extensions, and approval workflows are enforced by the platform.</li>
-                <li>Admins may trigger early-sell or moderation controls where platform policy allows it.</li>
-            </ul>
-
-            <h2>Wallet And Payments</h2>
-            <ul>
-                <li>Wallet deposits, holds, refunds, and final bid outcomes are recorded as platform activity.</li>
-                <li>You are responsible for reviewing your own transaction and bidding history.</li>
-                <li>Suspicious wallet or bidding activity may be paused for review.</li>
-            </ul>
-
-            <h2>Messaging And Conduct</h2>
-            <ul>
-                <li>Messages must stay relevant to the product, delivery, settlement, or required clarifications.</li>
-                <li>Harassment, impersonation, fraud attempts, or off-platform abuse are prohibited.</li>
-                <li>Gavel may restrict messaging access where misuse or policy violations are detected.</li>
-            </ul>
-
-            <h2>Moderation And Platform Rights</h2>
-            <ul>
-                <li>Gavel may update moderation standards, review workflows, and platform controls to protect users.</li>
-                <li>Admin review notes and handbook standards form part of the listing approval process.</li>
-                <li>Use of the platform is conditional on compliance with marketplace rules and applicable law.</li>
-            </ul>
-        </article>
-    </main>
+<body style="padding-top:var(--space-20);">
+  <nav class="navbar"><div class="container">
+    <a href="/" class="navbar-brand">Gavel<span>.</span></a>
+    <ul class="navbar-nav">
+      <li><a href="auction.html">Live Auctions</a></li>
+      <li><a href="explore.html">Explore</a></li>
+      <li><a href="sell-product.html">Sell</a></li>
+      <li><a href="chats.html">Messages</a></li>
+    </ul>
+  </div></nav>
+  <main style="padding:var(--space-8) 0 var(--space-16);">
+    <div class="container" style="max-width:960px;">
+      <section class="card" style="padding:var(--space-8);border-radius:var(--radius-2xl);">
+        <span class="badge badge-approved">Campus Marketplace Policy</span>
+        <h1 style="font-size:var(--text-4xl);margin:var(--space-4) 0;">Terms & Conditions</h1>
+        <p class="text-muted">These terms govern listings, bidding, payments, messaging, moderation, and account use on Gavel.</p>
+        <h2 style="margin-top:var(--space-8);">Eligibility</h2>
+        <p class="text-muted">Gavel is intended for students and campus community members using accurate account information. You are responsible for keeping your account credentials secure and for all activity that occurs under your account.</p>
+        <h2 style="margin-top:var(--space-6);">Bidding Rules</h2>
+        <p class="text-muted">Bids are binding. If you place a bid or configure auto-bid, you authorize Gavel to treat that amount as a live commitment. Anti-snipe extensions, reserve logic, and approval workflows are enforced by the platform.</p>
+        <h2 style="margin-top:var(--space-6);">Seller Duties</h2>
+        <p class="text-muted">Sellers must own or be authorized to sell the listed item, disclose defects honestly, and upload real media of the actual product. Counterfeit, stolen, unsafe, illegal, or prohibited goods are not allowed.</p>
+        <h2 style="margin-top:var(--space-6);">Payments And Settlement</h2>
+        <p class="text-muted">Wallet deposits, holds, refunds, and auction settlements may be applied automatically. Winning bidders must complete payment and collection within the stated timeline. Repeated non-payment may result in suspension.</p>
+        <h2 style="margin-top:var(--space-6);">Disputes</h2>
+        <p class="text-muted">If a product is materially different from its listing, both parties must cooperate with platform review. Gavel may inspect messages, media, and moderation notes when resolving disputes. Final outcomes may include reversal, warning, suspension, or permanent removal.</p>
+        <h2 style="margin-top:var(--space-6);">Account Suspension</h2>
+        <p class="text-muted">Gavel may pause or terminate accounts for fraud, harassment, charge abuse, manipulation of bids, repeated cancelled transactions, or attempts to bypass review and safety processes.</p>
+      </section>
+    </div>
+  </main>
+  <footer style="border-top:1px solid var(--border-light);padding:var(--space-8) 0;background:var(--bg);">
+    <div class="container flex-between"><a href="/" class="navbar-brand">Gavel<span>.</span></a><p class="text-muted text-sm">&copy; 2026 Gavel</p></div>
+  </footer>
 </body>
 </html>

@@ -251,10 +251,14 @@ function buildRowCard(item) {
     div.onclick = () => openDetailById(item.id);
 
     const isWatched = userWatchlist.includes(item.id);
+    const specs = UI.normalizeSpecifications(item.specifications || {}).slice(0, 3);
+    const specsMarkup = specs.length
+        ? `<div class="row-specs">${specs.map(([key, value]) => `<span class="row-spec">${escapeHtml(key)}: ${escapeHtml(value)}</span>`).join('')}</div>`
+        : '';
 
     div.innerHTML = `
         <div class="row-img-wrap">
-            <img src="${item.image}" alt="${item.title}">
+            <img src="${item.image || (item.images && item.images[0]) || ''}" alt="${item.title}">
             ${!item.verified ? '<span class="unverified-badge" style="position:absolute; top:10px; left:10px; background:rgba(255,59,48,0.1); color:var(--neon-red); font-size:0.65rem; font-weight:700; padding:4px 8px; border-radius:6px; border: 1px solid rgba(255,59,48,0.3); z-index:5;">UNVERIFIED</span>' : ''}
             ${item.hotLabel ? '<span class="unverified-badge" style="position:absolute; top:10px; left:10px; background:rgba(174,36,72,0.14); color:#ffd7df; font-size:0.65rem; font-weight:700; padding:4px 8px; border-radius:6px; border: 1px solid rgba(174,36,72,0.35); z-index:5;">' + item.hotLabel + '</span>' : ''}
             <button class="heart-btn" onclick="toggleCardWatchlist(event, '${item.id}', this)" title="${isWatched ? 'Remove Watchlist' : 'Add Watchlist'}" style="color:${isWatched ? 'var(--accent-blue)' : 'rgba(255,255,255,0.4)'}">★</button>
@@ -262,7 +266,8 @@ function buildRowCard(item) {
         <div class="row-body">
             <div>
                 <div class="row-title">${item.title}</div>
-                <div class="row-desc">${item.description || ''}</div>
+                <div class="row-desc" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${item.description || ''}</div>
+                ${specsMarkup}
             </div>
             <div>
                 <div class="row-bid">₹${item.currentBid.toLocaleString('en-IN')}</div>
@@ -358,6 +363,10 @@ function renderDetailPanel(item, container) {
     const safeDescription = escapeHtml(item.description || 'No description provided.');
     const safeSeller = escapeHtml(item.sellerName || item.sellerEmail);
     const safeCategory = escapeHtml(item.category || '');
+    const specs = UI.normalizeSpecifications(item.specifications || {});
+    const specMarkup = specs.length
+        ? `<div style="margin-bottom:24px;"><h4 style="font-size:1rem;margin-bottom:10px;">Specifications</h4><dl style="display:grid;grid-template-columns:minmax(120px,160px) 1fr;gap:8px 12px;">${specs.map(([key, value]) => `<dt style="font-weight:700;color:var(--text-primary);">${escapeHtml(key)}</dt><dd style="margin:0;color:var(--text-secondary);">${escapeHtml(value)}</dd>`).join('')}</dl></div>`
+        : '';
 
     container.innerHTML = `
         <div style="background:var(--bg-card); display:flex; justify-content:space-between; align-items:center; padding:15px 25px; border-bottom:1px solid var(--border-color);">
@@ -412,6 +421,7 @@ function renderDetailPanel(item, container) {
 
                 <h4 style="font-size:1.1rem; margin-bottom:10px;">Asset Description</h4>
                 <p style="color:var(--text-secondary); line-height:1.6; margin-bottom:30px;">${safeDescription}</p>
+                ${specMarkup}
 
                 <a href="/item-detail.html?id=${item.id}" class="btn-primary" style="display:block; text-align:center; background:transparent; border:1px solid var(--border-color); color:var(--text-primary);">See More Details</a>
             </div>

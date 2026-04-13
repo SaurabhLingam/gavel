@@ -1,156 +1,348 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Explore | Gavel</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Explore — Gavel</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/responsive.css">
+  <link rel="icon" href="images/logo.png">
+  <style>
+    .explore-topbar { position: sticky; top: calc(var(--space-20) + var(--space-4)); z-index: 40; background: rgba(250,247,242,0.94); border-bottom: 1px solid var(--border-light); padding: var(--space-3) 0; backdrop-filter: blur(14px); }
+    .explore-topbar .container { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; }
+    .explore-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-4); padding: var(--space-6) 0 var(--space-16); }
+    .explore-card { position: relative; border-radius: var(--radius-xl); overflow: hidden; background: var(--ink); cursor: pointer; min-height: 420px; }
+    .explore-card video, .explore-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .explore-card video { pointer-events: none; }
+    .explore-overlay { position: absolute; inset: auto 0 0 0; padding: var(--space-5); background: linear-gradient(transparent, rgba(0,0,0,0.82)); color: var(--parchment); }
+    .explore-title { font-family: var(--font-heading); font-size: var(--text-lg); margin-bottom: var(--space-1); }
+    .explore-meta { display: flex; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-xs); opacity: 0.88; }
+    .explore-watch { position: absolute; top: var(--space-3); right: var(--space-3); z-index: 2; width: 34px; height: 34px; border-radius: 50%; border: none; background: rgba(250,247,242,0.75); cursor: pointer; }
+    .reel-view { position: fixed; inset: 0; z-index: 260; background: rgba(0,0,0,0.94); display: none; }
+    .reel-view.open { display: block; }
+    .reel-shell { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(340px, 44vw) minmax(320px, 1fr); gap: var(--space-6); padding: var(--space-6); align-items: center; }
+    .reel-column { position: relative; height: calc(100vh - 48px); display: flex; align-items: center; justify-content: center; }
+    .reel-media-frame { position: relative; background: #000; border-radius: 28px; overflow: hidden; width: min(100%, 520px); max-height: 100%; display: flex; align-items: center; justify-content: center; }
+    .reel-media-frame video, .reel-media-frame img { display: block; max-width: 100%; max-height: calc(100vh - 180px); width: auto; height: auto; object-fit: contain; }
+    .reel-actions { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 12px; z-index: 5; }
+    .reel-action-btn { display: inline-flex; align-items: center; gap: 8px; border: none; border-radius: 999px; padding: 10px 16px; background: rgba(17,17,17,0.7); color: var(--parchment); cursor: pointer; }
+    .reel-side { background: var(--bg-raised); border: 1px solid rgba(255,255,255,0.08); border-radius: 28px; padding: var(--space-6); color: var(--text-primary); min-height: 70vh; max-height: calc(100vh - 48px); overflow: auto; position: relative; }
+    .reel-specs { width: 100%; border-collapse: collapse; margin-top: var(--space-4); }
+    .reel-specs td { border-bottom: 1px solid var(--border-light); padding: 10px 0; vertical-align: top; }
+    .reel-specs td:first-child { width: 140px; color: var(--text-muted); font-weight: 600; }
+    .reel-chat { position: absolute; right: 24px; bottom: 24px; width: min(360px, calc(100% - 48px)); background: rgba(250,247,242,0.97); border: 1px solid var(--border-light); border-radius: 22px; padding: var(--space-4); box-shadow: var(--shadow-xl); display: none; z-index: 8; }
+    .reel-chat.open { display: block; }
+    .reel-chat textarea { width: 100%; min-height: 90px; border: 1px solid var(--border); border-radius: 14px; padding: 12px; font: inherit; background: var(--bg); }
+    .reel-nav { position: absolute; top: 50%; left: 24px; right: 24px; transform: translateY(-50%); display: flex; justify-content: space-between; pointer-events: none; }
+    .reel-nav button { pointer-events: auto; width: 42px; height: 42px; border-radius: 50%; border: none; background: rgba(255,255,255,0.14); color: white; cursor: pointer; }
+    .reel-close { position: absolute; top: 24px; right: 24px; z-index: 10; width: 42px; height: 42px; border-radius: 50%; border: none; background: rgba(255,255,255,0.12); color: white; cursor: pointer; }
+    @media (max-width: 980px) {
+      .reel-shell { grid-template-columns: 1fr; padding: var(--space-4); overflow: auto; }
+      .reel-column, .reel-side { max-height: none; min-height: auto; height: auto; }
+      .reel-media-frame { width: min(100%, 420px); }
+      .reel-chat { position: fixed; left: 16px; right: 16px; bottom: 16px; width: auto; }
+    }
+  </style>
 </head>
-<body>
-    <header>
-        <nav class="navbar">
-            <div class="logo">
-                <a href="/" style="text-decoration: none; display: flex; align-items: center; color: inherit;">
-                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="var(--accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span>Gavel</span>
-                </a>
-            </div>
-            <ul class="nav-links"><!-- Populated by nav.js --></ul>
-        </nav>
-    </header>
-
-    <section style="text-align:center; padding: 30px 20px 10px;">
-        <h1 style="font-size: 2rem; margin: 0 0 8px;">Explore</h1>
-        <p style="color: var(--text-secondary); margin: 0 0 20px; font-size: 0.95rem;">Discover live auctions like scrolling Reels</p>
-
-        <div style="max-width: 500px; margin: 0 auto 10px;">
-            <input type="text" id="explore-search" placeholder="Search auctions..." style="width:100%; padding:12px 20px; border-radius:16px; border:1px solid rgba(255,255,255,0.08); background:var(--glass-bg); color:var(--text-primary); font-size:0.95rem; outline:none; box-sizing:border-box;">
-        </div>
-
-        <div class="explore-tabs" id="explore-tabs">
-            <button class="explore-tab active" data-filter="all">All Shorts</button>
-            <button class="explore-tab" data-filter="live">Live Now</button>
-            <button class="explore-tab" data-filter="ending">Ending Soon</button>
-            <button class="explore-tab" data-filter="highbids">High Bids</button>
-        </div>
-    </section>
-
-    <div class="explore-grid" id="explore-grid">
-        <!-- Cards rendered by JS -->
+<body style="padding-top:var(--space-20);">
+  <nav class="navbar" id="navbar"><div class="container">
+    <a href="/" class="navbar-brand">Gavel<span>.</span></a>
+    <ul class="navbar-nav">
+      <li><a href="auction.html">Live Auctions</a></li>
+      <li><a href="explore.html" style="color:var(--olive);background:rgba(92,107,79,0.08);">Explore</a></li>
+      <li><a href="sell-product.html">Sell</a></li>
+    </ul>
+    <div class="navbar-actions">
+      <a href="login.html" class="btn btn-ghost btn-sm" id="loginBtn">Log in</a>
+      <a href="signup.html" class="btn btn-primary btn-sm" id="signupBtn">Get Started</a>
+      <a href="dashboard.html" class="btn btn-primary btn-sm hide" id="dashboardBtn">Dashboard</a>
+      <a href="chats.html" class="btn btn-ghost btn-sm">Messages</a>
     </div>
+  </div></nav>
 
-    <div style="text-align:center; padding: 20px;" id="load-more-area">
-        <button id="load-more-btn" class="btn-primary" style="border-radius:20px; padding: 12px 36px; background:transparent; border:1px solid rgba(255,255,255,0.1); color: var(--text-secondary);">
-            Load More
-        </button>
+  <div class="explore-topbar">
+    <div class="container">
+      <div class="search-bar" style="flex:1;min-width:220px;max-width:360px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--ink-muted);flex-shrink:0;margin-left:4px;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="exploreSearch" placeholder="Search products">
+      </div>
+      <select id="conditionFilter" class="form-select" style="width:180px;">
+        <option value="">All conditions</option>
+        <option value="new">New</option>
+        <option value="like new">Like New</option>
+        <option value="good">Good</option>
+        <option value="fair">Fair</option>
+      </select>
+      <button type="button" class="btn btn-ghost btn-sm" id="saveSearchBtn">Save Search + Notify</button>
+      <a href="bid-wars.html" class="btn btn-ghost btn-sm">Bid Wars</a>
     </div>
+  </div>
 
-    <footer><p>&copy; 2026 Gavel Protocol. All rights reserved.</p></footer>
+  <main>
+    <div class="container">
+      <div class="explore-grid" id="exploreGrid">
+        <div class="skeleton" style="aspect-ratio:9/16;border-radius:var(--radius-xl);"></div>
+        <div class="skeleton" style="aspect-ratio:9/16;border-radius:var(--radius-xl);"></div>
+        <div class="skeleton" style="aspect-ratio:9/16;border-radius:var(--radius-xl);"></div>
+      </div>
+    </div>
+  </main>
 
-    <script src="js/nav.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="js/auth.js"></script>
-    <script src="js/feed.js"></script>
-    <script>
-    let allAuctions = [];
-    let displayedCount = 0;
-    const PAGE_SIZE = 12;
-    let currentFilter = 'all';
-    let currentSearch = '';
+  <div class="reel-view" id="reelView">
+    <button class="reel-close" type="button" id="reelClose">&times;</button>
+    <div class="reel-nav">
+      <button type="button" id="prevReel">&#8593;</button>
+      <button type="button" id="nextReel">&#8595;</button>
+    </div>
+    <div class="reel-shell" id="reelShell"></div>
+  </div>
 
-    document.addEventListener('DOMContentLoaded', async () => {
-        try {
-            const [auctionRes, meRes] = await Promise.all([
-                fetch('/api/auctions'),
-                fetch('/api/me')
-            ]);
-            allAuctions = await auctionRes.json();
-            const me = await meRes.json();
-            if (me.loggedIn) {
-                const watchlistRes = await fetch('/api/watchlist').catch(() => null);
-                if (watchlistRes && watchlistRes.ok) {
-                    const watchlist = await watchlistRes.json();
-                    window.userWatchlist = watchlist.map(item => item.id);
-                }
-            }
-            renderExplore();
-            GavelFeed.startTimers();
-        } catch(e) { console.error(e); }
+  <footer style="border-top:1px solid var(--border-light);padding:var(--space-8) 0;background:var(--bg);">
+    <div class="container flex-between"><a href="/" class="navbar-brand">Gavel<span>.</span></a><p class="text-muted text-sm">&copy; 2026 Gavel · <a href="/admin-handbook.html">Become an Admin</a></p></div>
+  </footer>
+  <div class="toast-container" id="toastContainer"></div>
 
-        // Tab switching
-        document.querySelectorAll('.explore-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.explore-tab').forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                currentFilter = tab.dataset.filter;
-                displayedCount = 0;
-                document.getElementById('explore-grid').innerHTML = '';
-                renderExplore();
-            });
-        });
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/page-state.js"></script>
+  <script>
+    let auctions = [];
+    let filtered = [];
+    let reelIndex = 0;
+    let activeVideo = null;
+    let wheelLocked = false;
+    let touchStartY = 0;
 
-        // Search
-        let searchTimeout;
-        document.getElementById('explore-search').addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                currentSearch = e.target.value.toLowerCase();
-                displayedCount = 0;
-                document.getElementById('explore-grid').innerHTML = '';
-                renderExplore();
-            }, 300);
-        });
+    document.addEventListener('DOMContentLoaded', async function() {
+      await Auth.init();
+      const pageState = window.GavelPageState ? window.GavelPageState.load() : {};
+      document.getElementById('exploreSearch').value = pageState.search || '';
+      document.getElementById('conditionFilter').value = pageState.condition || '';
 
-        // Load more
-        document.getElementById('load-more-btn').addEventListener('click', renderExplore);
+      const res = await api.get('/auctions?status=active&sort=endTime&order=asc&limit=50');
+      auctions = Array.isArray(res) ? res : [];
+      applyFilters();
+      renderGrid();
+
+      document.getElementById('exploreSearch').addEventListener('input', function() {
+        persistFilters();
+        applyFilters();
+        renderGrid();
+      });
+      document.getElementById('conditionFilter').addEventListener('change', function() {
+        persistFilters();
+        applyFilters();
+        renderGrid();
+      });
+      document.getElementById('saveSearchBtn').addEventListener('click', saveSearch);
+      document.getElementById('reelClose').addEventListener('click', closeReel);
+      document.getElementById('prevReel').addEventListener('click', function() { goToReel(reelIndex - 1); });
+      document.getElementById('nextReel').addEventListener('click', function() { goToReel(reelIndex + 1); });
+
+      const reelView = document.getElementById('reelView');
+      reelView.addEventListener('wheel', handleWheel, { passive: false });
+      reelView.addEventListener('touchstart', function(event) { touchStartY = event.touches[0].clientY; }, { passive: true });
+      reelView.addEventListener('touchend', function(event) {
+        const delta = touchStartY - event.changedTouches[0].clientY;
+        if (Math.abs(delta) < 50) return;
+        if (delta > 0) goToReel(reelIndex + 1);
+        else goToReel(reelIndex - 1);
+      }, { passive: true });
+
+      const openItem = new URLSearchParams(window.location.search).get('item');
+      if (openItem) {
+        const idx = filtered.findIndex(function(entry) { return String(entry.id) === String(openItem); });
+        if (idx >= 0) openReel(idx);
+      }
     });
 
-    function getFilteredAuctions() {
-        let items = allAuctions.filter(a => a.status === 'active');
-
-        if (currentSearch) {
-            items = items.filter(a => a.title.toLowerCase().includes(currentSearch) || (a.category || '').toLowerCase().includes(currentSearch));
-        }
-
-        switch(currentFilter) {
-            case 'live':
-                items = items.filter(a => a.endTime && new Date(a.endTime) > new Date());
-                break;
-            case 'ending':
-                items = items
-                    .filter(a => a.endTime && new Date(a.endTime) > new Date())
-                    .sort((a,b) => new Date(a.endTime) - new Date(b.endTime));
-                break;
-            case 'highbids':
-                items = items.sort((a,b) => b.currentBid - a.currentBid);
-                break;
-        }
-
-        return items;
+    function persistFilters() {
+      if (!window.GavelPageState) return;
+      window.GavelPageState.save({
+        search: document.getElementById('exploreSearch').value.trim(),
+        condition: document.getElementById('conditionFilter').value,
+        scrollY: window.scrollY
+      });
     }
 
-    function renderExplore() {
-        const grid = document.getElementById('explore-grid');
-        const items = getFilteredAuctions();
-        const batch = items.slice(displayedCount, displayedCount + PAGE_SIZE);
+    function applyFilters() {
+      const search = document.getElementById('exploreSearch').value.trim().toLowerCase();
+      const condition = document.getElementById('conditionFilter').value.trim().toLowerCase();
+      const blocked = JSON.parse(localStorage.getItem('gavel_blocked_sellers') || '[]');
+      filtered = auctions.filter(function(item) {
+        const matchesSearch = !search || item.title.toLowerCase().includes(search) || String(item.description || '').toLowerCase().includes(search);
+        const itemCondition = String((item.specifications || {}).Condition || (item.specifications || {}).condition || item.condition || '').toLowerCase();
+        const matchesCondition = !condition || itemCondition === condition;
+        return matchesSearch && matchesCondition && blocked.indexOf(item.sellerEmail) === -1;
+      });
+    }
 
-        batch.forEach(item => {
-            const card = GavelFeed.buildShortCard(item);
-            grid.appendChild(card);
+    function renderGrid() {
+      const grid = document.getElementById('exploreGrid');
+      if (!filtered.length) {
+        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><h3>No products found</h3><p>Try a different search or condition.</p></div>';
+        return;
+      }
+      grid.innerHTML = filtered.map(function(item, index) {
+        const cover = (item.images || [])[0] || '';
+        const media = item.video
+          ? `<video src="${item.video}" muted loop playsinline preload="metadata"></video>`
+          : `<img src="${cover}" alt="${escapeHtml(item.title)}">`;
+        return `<article class="explore-card" data-index="${index}">
+          <button class="explore-watch" type="button" data-watch="${item.id}">&#9829;</button>
+          ${media}
+          <div class="explore-overlay">
+            <div class="explore-title">${escapeHtml(item.title)}</div>
+            <div>${UI.formatPrice(item.currentBid)}</div>
+            <div class="explore-meta">
+              <span>${escapeHtml(item.category || 'General')}</span>
+              <span>${UI.formatTime(item.endTime)}</span>
+            </div>
+          </div>
+        </article>`;
+      }).join('');
+
+      document.querySelectorAll('.explore-card').forEach(function(card) {
+        card.addEventListener('click', function(event) {
+          if (event.target.closest('[data-watch]')) return;
+          openReel(Number(card.getAttribute('data-index')));
         });
-
-        displayedCount += batch.length;
-
-        // Hide load more if no more items
-        document.getElementById('load-more-btn').style.display =
-            displayedCount >= items.length ? 'none' : 'inline-block';
-
-        GavelFeed.setupAutoplay();
+      });
+      document.querySelectorAll('.explore-card video').forEach(function(video) { video.muted = true; video.play().catch(function() {}); });
     }
-    </script>
-    </script>
+
+    function openReel(index) {
+      if (index < 0 || index >= filtered.length) return;
+      reelIndex = index;
+      document.getElementById('reelView').classList.add('open');
+      document.body.style.overflow = 'hidden';
+      renderReel();
+      history.replaceState({ reel: true }, '', '/explore.html?item=' + encodeURIComponent(filtered[reelIndex].id));
+    }
+
+    function closeReel() {
+      document.getElementById('reelView').classList.remove('open');
+      document.body.style.overflow = '';
+      if (activeVideo) activeVideo.pause();
+      history.replaceState({}, '', '/explore.html');
+    }
+
+    function goToReel(index) {
+      if (index < 0 || index >= filtered.length) return;
+      reelIndex = index;
+      renderReel();
+      history.replaceState({ reel: true }, '', '/explore.html?item=' + encodeURIComponent(filtered[reelIndex].id));
+    }
+
+    function renderReel() {
+      const item = filtered[reelIndex];
+      if (!item) return;
+      const shell = document.getElementById('reelShell');
+      const cover = (item.images || [])[0] || '';
+      const mediaMarkup = item.video
+        ? `<video id="activeReelVideo" src="${item.video}" muted loop playsinline controls></video>`
+        : `<img src="${cover}" alt="${escapeHtml(item.title)}">`;
+      const specs = UI.normalizeSpecifications(item.specifications);
+      shell.innerHTML = `
+        <section class="reel-column">
+          <div class="reel-media-frame" id="reelMediaFrame">
+            ${mediaMarkup}
+            <div class="reel-actions">
+              <button type="button" class="reel-action-btn" onclick="toggleSaved(${reelIndex})">&#9829; Save</button>
+              <button type="button" class="reel-action-btn" onclick="toggleChatPanel()">Chat</button>
+            </div>
+          </div>
+        </section>
+        <aside class="reel-side">
+          <div class="badge badge-live">Explore</div>
+          <h1 style="font-size:var(--text-3xl);margin:var(--space-3) 0;">${escapeHtml(item.title)}</h1>
+          <p class="price" style="font-size:var(--text-3xl);">${UI.formatPrice(item.currentBid)}</p>
+          <p class="text-muted" style="margin-top:var(--space-4);white-space:pre-wrap;">${escapeHtml(item.description || 'No description provided.')}</p>
+          ${specs.length ? `<table class="reel-specs">${specs.map(function(entry) { return `<tr><td>${escapeHtml(entry[0])}</td><td>${escapeHtml(entry[1])}</td></tr>`; }).join('')}</table>` : ''}
+          <div style="margin-top:var(--space-5);display:flex;gap:12px;flex-wrap:wrap;">
+            <a href="item-detail.html?id=${item.id}" class="btn btn-primary">Open Item Page</a>
+            <a href="chat.html?auction=${item.id}&with=${encodeURIComponent(item.sellerEmail || '')}" class="btn btn-ghost">Open Messages</a>
+          </div>
+          <div class="reel-chat" id="reelChat">
+            <strong>Ask ${escapeHtml((item.sellerName || item.sellerEmail || 'seller').split(' ')[0])} about this listing</strong>
+            <textarea id="reelChatMessage" placeholder="Need more images? Ask about pickup, condition, or accessories..."></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="toggleChatPanel()">Close</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="sendReelMessage()">Send</button>
+            </div>
+          </div>
+        </aside>
+      `;
+      activeVideo = document.getElementById('activeReelVideo');
+      if (activeVideo) {
+        activeVideo.muted = true;
+        activeVideo.volume = 0;
+        activeVideo.play().catch(function() {});
+      }
+    }
+
+    function handleWheel(event) {
+      if (!document.getElementById('reelView').classList.contains('open')) return;
+      event.preventDefault();
+      if (wheelLocked) return;
+      wheelLocked = true;
+      if (event.deltaY > 0) goToReel(reelIndex + 1);
+      else if (event.deltaY < 0) goToReel(reelIndex - 1);
+      window.setTimeout(function() { wheelLocked = false; }, 250);
+    }
+
+    function toggleChatPanel() {
+      const panel = document.getElementById('reelChat');
+      if (panel) panel.classList.toggle('open');
+    }
+
+    async function sendReelMessage() {
+      if (!Auth.isLoggedIn()) {
+        window.location.href = '/login.html';
+        return;
+      }
+      const item = filtered[reelIndex];
+      const message = document.getElementById('reelChatMessage').value.trim();
+      if (!message) return;
+      const res = await api.post('/chat/messages', { auctionId: item.id, sellerEmail: item.sellerEmail, message: message });
+      if (res && res.success) {
+        UI.toast('Message sent to ' + (item.sellerName || 'seller'), 'success');
+        Auth.notify('Message sent', 'Your message about ' + item.title + ' was delivered.');
+        document.getElementById('reelChatMessage').value = '';
+      } else {
+        UI.toast('Could not send message', 'error');
+      }
+    }
+
+    function saveSearch() {
+      const searches = JSON.parse(localStorage.getItem('gavel_saved_searches') || '[]');
+      searches.push({
+        query: document.getElementById('exploreSearch').value.trim(),
+        condition: document.getElementById('conditionFilter').value,
+        notify: true,
+        createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('gavel_saved_searches', JSON.stringify(searches));
+      UI.toast('Saved search with notifications enabled', 'success');
+    }
+
+    function toggleSaved(index) {
+      const item = filtered[index];
+      api.post('/watchlist/toggle', { auctionId: item.id }).then(function(res) {
+        if (res && res.success) UI.toast(res.added ? 'Added to watchlist' : 'Removed from watchlist', 'info');
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    window.toggleChatPanel = toggleChatPanel;
+    window.sendReelMessage = sendReelMessage;
+    window.toggleSaved = toggleSaved;
+  </script>
 </body>
 </html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You Won — Gavel</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/responsive.css">
+  <link rel="icon" href="images/logo.png">
+  <style>
+    .winner-page { padding: var(--space-8) 0 var(--space-16); }
+    .winner-grid { display:grid; grid-template-columns:minmax(0,1.1fr) 360px; gap:var(--space-6); align-items:start; }
+    .winner-card, .winner-side { background:var(--bg-raised); border:1px solid var(--border-light); border-radius:var(--radius-2xl); box-shadow:var(--shadow-sm); }
+    .winner-card { padding:var(--space-7); }
+    .winner-side { padding:var(--space-5); position:sticky; top:calc(var(--space-20) + var(--space-4)); }
+    .winner-hero { display:grid; grid-template-columns:120px minmax(0,1fr); gap:var(--space-5); align-items:center; margin-bottom:var(--space-6); }
+    .winner-image { width:120px; height:120px; border-radius:24px; object-fit:cover; background:var(--sand); }
+    .winner-chip { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; background:rgba(92,107,79,0.12); color:var(--olive-dark); font-weight:700; font-size:var(--text-xs); letter-spacing:0.04em; text-transform:uppercase; }
+    .winner-title { font-size:clamp(2rem,3vw,2.8rem); line-height:1.05; margin:12px 0 10px; }
+    .winner-copy { color:var(--text-secondary); line-height:1.8; }
+    .summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); margin:var(--space-6) 0; }
+    .summary-box { background:var(--parchment); border:1px solid var(--border-light); border-radius:20px; padding:var(--space-4); }
+    .summary-box strong { display:block; font-size:var(--text-xs); letter-spacing:0.05em; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px; }
+    .summary-box span { font-size:var(--text-lg); font-weight:700; }
+    .steps-list { display:grid; gap:var(--space-3); margin-top:var(--space-5); }
+    .step-card { display:grid; grid-template-columns:40px minmax(0,1fr); gap:var(--space-3); align-items:start; padding:16px 18px; background:var(--bg); border:1px solid var(--border-light); border-radius:18px; }
+    .step-num { width:40px; height:40px; border-radius:50%; display:grid; place-items:center; background:var(--sand); font-weight:700; color:var(--earth-dark); }
+    .side-stack { display:grid; gap:var(--space-4); }
+    .side-box { background:var(--bg); border:1px solid var(--border-light); border-radius:18px; padding:var(--space-4); }
+    .side-box h3 { font-size:var(--text-base); margin-bottom:10px; }
+    .cta-stack { display:grid; gap:12px; }
+    @media (max-width: 900px) {
+      .winner-grid { grid-template-columns:1fr; }
+      .winner-side { position:static; }
+      .winner-hero, .summary-grid { grid-template-columns:1fr; }
+      .winner-image { width:100%; height:220px; }
+    }
+  </style>
+</head>
+<body style="padding-top:var(--space-20);">
+  <nav class="navbar" id="navbar"><div class="container">
+    <a href="/" class="navbar-brand">Gavel<span>.</span></a>
+    <ul class="navbar-nav">
+      <li><a href="auction.html">Live Auctions</a></li>
+      <li><a href="explore.html">Explore</a></li>
+      <li><a href="sell-product.html">Sell</a></li>
+      <li><a href="chats.html">Messages</a></li>
+    </ul>
+    <div class="navbar-actions">
+      <a href="login.html" class="btn btn-ghost btn-sm" id="loginBtn">Log in</a>
+      <a href="signup.html" class="btn btn-primary btn-sm" id="signupBtn">Get Started</a>
+      <a href="dashboard.html" class="btn btn-primary btn-sm hide" id="dashboardBtn">Dashboard</a>
+    </div>
+  </div></nav>
+
+  <main class="winner-page">
+    <div class="container">
+      <div id="winnerContent"><div class="flex-center" style="min-height:460px;"><div class="spinner"></div></div></div>
+    </div>
+  </main>
+
+  <footer style="border-top:1px solid var(--border-light);padding:var(--space-8) 0;background:var(--bg);">
+    <div class="container flex-between" style="gap:var(--space-4);">
+      <a href="/" class="navbar-brand">Gavel<span>.</span></a>
+      <p class="text-muted text-sm">&copy; 2026 Gavel · <a href="/admin-handbook.html">Become an Admin</a></p>
+    </div>
+  </footer>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      await Auth.init();
+      if (!Auth.isLoggedIn()) {
+        window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+        return;
+      }
+      window.addEventListener('scroll', function() {
+        document.getElementById('navbar')?.classList.toggle('scrolled', window.scrollY > 20);
+      });
+
+      const id = new URLSearchParams(window.location.search).get('id');
+      if (!id) {
+        renderError('No auction selected.');
+        return;
+      }
+
+      const res = await api.get('/auctions/' + id + '/winner-summary');
+      if (!res || res.error || !res.isWinner) {
+        renderError(res?.error || 'This winner confirmation is only available to the winning bidder.');
+        return;
+      }
+
+      renderWinner(res);
+    });
+
+    function renderWinner(summary) {
+      const auction = summary.auction || {};
+      const seller = summary.seller || {};
+      const image = (auction.images || [])[0] || '';
+      document.getElementById('winnerContent').innerHTML = `
+        <div class="winner-grid">
+          <section class="winner-card">
+            <div class="winner-hero">
+              ${image ? `<img class="winner-image" src="${image}" alt="${escapeHtml(auction.title)}">` : `<div class="winner-image" style="display:grid;place-items:center;">No media</div>`}
+              <div>
+                <span class="winner-chip">Auction Won</span>
+                <h1 class="winner-title">You won ${escapeHtml(auction.title || 'this item')}</h1>
+                <p class="winner-copy">You are the highest bidder. Contact the seller now to confirm the meetup, exchange item details, and complete delivery safely on campus.</p>
+              </div>
+            </div>
+
+            <div class="summary-grid">
+              <div class="summary-box">
+                <strong>Winning Bid</strong>
+                <span>${UI.formatPrice(auction.winningBid || auction.currentBid || 0)}</span>
+              </div>
+              <div class="summary-box">
+                <strong>Seller</strong>
+                <span>${escapeHtml(seller.name || seller.email || 'Seller')}</span>
+              </div>
+              <div class="summary-box">
+                <strong>Trust Score</strong>
+                <span>${Number(seller.trustScore || 0)}/100</span>
+              </div>
+              <div class="summary-box">
+                <strong>Category</strong>
+                <span>${escapeHtml(auction.category || 'General')}</span>
+              </div>
+            </div>
+
+            <h2 style="font-size:var(--text-2xl);margin-bottom:var(--space-3);">Next Steps</h2>
+            <div class="steps-list">
+              <div class="step-card">
+                <div class="step-num">1</div>
+                <div>
+                  <strong>Open the product chat</strong>
+                  <div class="winner-copy">Use the dedicated thread for this item so all delivery and payment details stay attached to the listing.</div>
+                </div>
+              </div>
+              <div class="step-card">
+                <div class="step-num">2</div>
+                <div>
+                  <strong>Schedule your meetup</strong>
+                  <div class="winner-copy">Choose a campus time slot and confirm notes like landmarks, floor, or hostel block.</div>
+                </div>
+              </div>
+              <div class="step-card">
+                <div class="step-num">3</div>
+                <div>
+                  <strong>Verify before handoff</strong>
+                  <div class="winner-copy">Match the item with the listing, confirm payment, and mark the transaction as received before leaving.</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <aside class="winner-side">
+            <div class="side-stack">
+              <div class="side-box">
+                <h3>Finish the transaction</h3>
+                <div class="cta-stack">
+                  <a class="btn btn-primary" href="/chat.html?auction=${auction.id}&with=${encodeURIComponent(seller.email || auction.sellerEmail || '')}">Open Product Chat</a>
+                  <a class="btn btn-secondary" href="/receipt.html?id=${auction.id}">View Receipt</a>
+                  <a class="btn btn-ghost" href="/item-detail.html?id=${auction.id}">Back to Item</a>
+                </div>
+              </div>
+              <div class="side-box">
+                <h3>Campus safety reminder</h3>
+                <p class="winner-copy">Meet in a well-lit campus location, inspect the item before marking it received, and keep all scheduling inside Gavel chat.</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      `;
+    }
+
+    function renderError(message) {
+      document.getElementById('winnerContent').innerHTML = `<div class="empty-state"><h3>${escapeHtml(message)}</h3><p><a href="/dashboard.html">Go to dashboard</a></p></div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>

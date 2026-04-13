@@ -100,9 +100,9 @@
 
     if (user) {
         try {
-            const res = await fetch('/api/my-chats');
+            const res = await fetch('/api/chat/my-chats/list');
             const chats = await res.json();
-            const total = chats.reduce((sum, chat) => sum + (chat.unread || 0), 0);
+            const total = chats.reduce((sum, chat) => sum + Number(chat.unread || chat.unreadCount || 0), 0);
             const messageLink = Array.from(sidebar.querySelectorAll('a')).find((anchor) => anchor.getAttribute('href') === '/workspace/messages.html');
             if (messageLink && total > 0) {
                 messageLink.innerHTML += ` <span class="sidebar-badge">${total > 99 ? '99+' : total}</span>`;

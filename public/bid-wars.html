@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bid Wars — Gavel</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="icon" href="images/logo.png">
+</head>
+<body style="padding-top:var(--space-20);">
+  <nav class="navbar"><div class="container">
+    <a href="/" class="navbar-brand">Gavel<span>.</span></a>
+    <ul class="navbar-nav">
+      <li><a href="auction.html">Live Auctions</a></li>
+      <li><a href="explore.html">Explore</a></li>
+      <li><a href="sell-product.html">Sell</a></li>
+    </ul>
+  </div></nav>
+  <main style="padding:var(--space-8) 0 var(--space-16);">
+    <div class="container">
+      <div class="section-header">
+        <h1>Bid Wars</h1>
+        <p>Auctions with the heaviest bidding pressure right now.</p>
+      </div>
+      <div class="grid grid-4" id="bidWarsGrid" style="margin-top:var(--space-6);">
+        <div class="skeleton" style="height:320px;"></div>
+        <div class="skeleton" style="height:320px;"></div>
+        <div class="skeleton" style="height:320px;"></div>
+      </div>
+    </div>
+  </main>
+  <footer style="border-top:1px solid var(--border-light);padding:var(--space-8) 0;background:var(--bg);">
+    <div class="container flex-between"><a href="/" class="navbar-brand">Gavel<span>.</span></a><p class="text-muted text-sm">&copy; 2026 Gavel · <a href="/admin-handbook.html">Become an Admin</a></p></div>
+  </footer>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      const res = await api.get('/auctions/bid-wars');
+      const grid = document.getElementById('bidWarsGrid');
+      if (!Array.isArray(res) || !res.length) {
+        grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><h3>No active bid wars</h3></div>';
+        return;
+      }
+      grid.innerHTML = res.map(function(item) { return UI.renderAuctionCard(item); }).join('');
+      UI.startCountdowns();
+    });
+  </script>
+</body>
+</html>

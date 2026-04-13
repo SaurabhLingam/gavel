@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Receipt — Gavel</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/animations.css">
+  <link rel="stylesheet" href="css/responsive.css">
+  <link rel="icon" href="images/logo.png">
+  <style>
+    .receipt-page { padding:var(--space-8) 0 var(--space-16); }
+    .receipt-shell { max-width:920px; margin:0 auto; display:grid; gap:var(--space-5); }
+    .receipt-card { background:var(--bg-raised); border:1px solid var(--border-light); border-radius:var(--radius-2xl); box-shadow:var(--shadow-sm); padding:var(--space-7); }
+    .receipt-top { display:flex; justify-content:space-between; gap:var(--space-4); flex-wrap:wrap; margin-bottom:var(--space-6); }
+    .receipt-title { font-size:clamp(2rem,3vw,2.6rem); margin-bottom:10px; }
+    .receipt-id { font-size:var(--text-sm); color:var(--text-muted); }
+    .receipt-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4); margin-bottom:var(--space-6); }
+    .receipt-box { padding:var(--space-4); border-radius:20px; background:var(--bg); border:1px solid var(--border-light); }
+    .receipt-box strong { display:block; font-size:var(--text-xs); text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:8px; }
+    .receipt-box span { font-size:var(--text-lg); font-weight:700; }
+    .receipt-table { width:100%; border-collapse:collapse; }
+    .receipt-table td { padding:14px 0; border-bottom:1px solid var(--border-light); vertical-align:top; }
+    .receipt-table td:first-child { width:220px; font-weight:700; color:var(--text-muted); }
+    .receipt-actions { display:flex; gap:12px; flex-wrap:wrap; margin-top:var(--space-6); }
+    @media (max-width: 700px) {
+      .receipt-grid { grid-template-columns:1fr; }
+      .receipt-card { padding:var(--space-5); }
+      .receipt-table td:first-child { width:140px; }
+    }
+    @media print {
+      nav, footer, .receipt-actions, .toast-container { display:none !important; }
+      body { padding-top:0 !important; background:#fff; }
+      .receipt-card { box-shadow:none; border:1px solid #ddd; }
+    }
+  </style>
+</head>
+<body style="padding-top:var(--space-20);">
+  <nav class="navbar" id="navbar"><div class="container">
+    <a href="/" class="navbar-brand">Gavel<span>.</span></a>
+    <ul class="navbar-nav">
+      <li><a href="auction.html">Live Auctions</a></li>
+      <li><a href="explore.html">Explore</a></li>
+      <li><a href="sell-product.html">Sell</a></li>
+      <li><a href="chats.html">Messages</a></li>
+    </ul>
+    <div class="navbar-actions">
+      <a href="login.html" class="btn btn-ghost btn-sm" id="loginBtn">Log in</a>
+      <a href="signup.html" class="btn btn-primary btn-sm" id="signupBtn">Get Started</a>
+      <a href="dashboard.html" class="btn btn-primary btn-sm hide" id="dashboardBtn">Dashboard</a>
+    </div>
+  </div></nav>
+
+  <main class="receipt-page">
+    <div class="container">
+      <div id="receiptContent"><div class="flex-center" style="min-height:420px;"><div class="spinner"></div></div></div>
+    </div>
+  </main>
+
+  <footer style="border-top:1px solid var(--border-light);padding:var(--space-8) 0;background:var(--bg);">
+    <div class="container flex-between" style="gap:var(--space-4);">
+      <a href="/" class="navbar-brand">Gavel<span>.</span></a>
+      <p class="text-muted text-sm">&copy; 2026 Gavel · <a href="/admin-handbook.html">Become an Admin</a></p>
+    </div>
+  </footer>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      await Auth.init();
+      if (!Auth.isLoggedIn()) {
+        window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+        return;
+      }
+      window.addEventListener('scroll', function() {
+        document.getElementById('navbar')?.classList.toggle('scrolled', window.scrollY > 20);
+      });
+
+      const id = new URLSearchParams(window.location.search).get('id');
+      if (!id) {
+        renderError('No receipt was requested.');
+        return;
+      }
+
+      const receipt = await api.get('/auctions/' + id + '/receipt');
+      if (!receipt || receipt.error) {
+        renderError(receipt?.error || 'Receipt not available.');
+        return;
+      }
+      renderReceipt(receipt, id);
+    });
+
+    function renderReceipt(receipt, auctionId) {
+      document.getElementById('receiptContent').innerHTML = `
+        <div class="receipt-shell">
+          <section class="receipt-card">
+            <div class="receipt-top">
+              <div>
+                <div class="receipt-id">Receipt ${escapeHtml(receipt.receiptNumber || '')}</div>
+                <h1 class="receipt-title">Transaction Receipt</h1>
+                <p class="text-muted">Issued on ${new Date(receipt.issuedAt).toLocaleString('en-IN')}</p>
+              </div>
+              <div class="winner-chip" style="display:inline-flex;align-items:center;padding:8px 14px;border-radius:999px;background:rgba(92,107,79,0.12);color:var(--olive-dark);font-weight:700;">Completed Auction</div>
+            </div>
+
+            <div class="receipt-grid">
+              <div class="receipt-box">
+                <strong>Item</strong>
+                <span>${escapeHtml(receipt.title || 'Listing')}</span>
+              </div>
+              <div class="receipt-box">
+                <strong>Amount</strong>
+                <span>${UI.formatPrice(receipt.amount || 0)}</span>
+              </div>
+              <div class="receipt-box">
+                <strong>Buyer</strong>
+                <span>${escapeHtml(receipt.buyerEmail || '—')}</span>
+              </div>
+              <div class="receipt-box">
+                <strong>Seller</strong>
+                <span>${escapeHtml(receipt.sellerEmail || '—')}</span>
+              </div>
+            </div>
+
+            <table class="receipt-table">
+              <tr><td>Meetup Slot</td><td>${escapeHtml(receipt.meetupSchedule?.slotLabel || 'Not scheduled')}</td></tr>
+              <tr><td>Meetup Notes</td><td>${escapeHtml(receipt.meetupSchedule?.notes || 'No notes added')}</td></tr>
+              <tr><td>Description Verified</td><td>${receipt.deliveryChecklist?.itemMatchedDescription ? 'Yes' : 'Pending'}</td></tr>
+              <tr><td>Meetup Completed</td><td>${receipt.deliveryChecklist?.meetupCompleted ? 'Yes' : 'Pending'}</td></tr>
+              <tr><td>Payment Completed</td><td>${receipt.deliveryChecklist?.paymentCompleted ? 'Yes' : 'Pending'}</td></tr>
+            </table>
+
+            <div class="receipt-actions">
+              <button class="btn btn-primary" type="button" onclick="window.print()">Print Receipt</button>
+              <a class="btn btn-secondary" href="/chat.html?auction=${auctionId}">Open Chat</a>
+              <a class="btn btn-ghost" href="/item-detail.html?id=${auctionId}">Back to Item</a>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    function renderError(message) {
+      document.getElementById('receiptContent').innerHTML = `<div class="empty-state"><h3>${escapeHtml(message)}</h3><p><a href="/dashboard.html">Go to dashboard</a></p></div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>

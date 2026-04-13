@@ -48,7 +48,7 @@ export const authAPI = {
     }),
   
   me: () =>
-    fetchAPI('/api/auth/me'),
+    fetchAPI('/api/me').then(data => data.user || null),
   
   getConfig: () =>
     fetchAPI('/api/config'),

@@ -56,12 +56,13 @@
       document.getElementById('winnerRoot').innerHTML = `
         <span class="badge badge-approved">Auction won</span>
         <h1 style="font-size:var(--text-5xl);margin-top:var(--space-4);">You won ${item.title}</h1>
-        <p style="margin-top:var(--space-4);color:var(--text-secondary);line-height:1.8;">Gavel has already secured ${UI.formatPrice(receipt.settlement?.securedAmount || 0)} from your wallet and moved it into the seller-side settlement flow. Pay the remaining ${UI.formatPrice(receipt.settlement?.remainingAmount || 0)} only after the product is received and the delivery handoff is complete.</p>
+        <p style="margin-top:var(--space-4);color:var(--text-secondary);line-height:1.8;">Gavel has already secured ${UI.formatPrice(receipt.settlement?.securedAmount || 0)} from your wallet into the superadmin treasury. Pay the remaining ${UI.formatPrice(receipt.settlement?.remainingAmount || 0)} only after the product is received and both codes are verified by the server.</p>
 
         <div class="winner-grid">
           <div class="winner-stat"><p class="text-muted text-sm">Winning bid</p><strong style="font-size:var(--text-2xl);">${UI.formatPrice(receipt.finalPrice || 0)}</strong></div>
           <div class="winner-stat"><p class="text-muted text-sm">Secured amount</p><strong style="font-size:var(--text-2xl);">${UI.formatPrice(receipt.settlement?.securedAmount || 0)}</strong></div>
           <div class="winner-stat"><p class="text-muted text-sm">Remaining after delivery</p><strong style="font-size:var(--text-2xl);">${UI.formatPrice(receipt.settlement?.remainingAmount || 0)}</strong></div>
+          <div class="winner-stat"><p class="text-muted text-sm">Your buyer code</p><strong style="font-size:var(--text-lg);">${receipt.settlement?.buyerCode || 'Pending'}</strong></div>
           <div class="winner-stat"><p class="text-muted text-sm">Seller contact</p><strong style="font-size:var(--text-lg);">${receipt.seller?.phoneNumber || 'Available in receipt'}</strong></div>
         </div>
 

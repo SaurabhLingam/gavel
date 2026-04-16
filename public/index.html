@@ -311,7 +311,7 @@
         </div>
       </div>
       <div class="divider" style="margin-top:var(--space-10);"></div>
-      <p class="text-muted text-sm" style="text-align:center;">&copy; 2026 Gavel. Built for students, by students.</p>
+      <p class="text-muted text-sm" style="text-align:center;">&copy; 2026 Gavel. Built for students, by students. <a href="terms-and-conditions.html" style="color:var(--olive);font-weight:600;">Terms &amp; Conditions</a></p>
     </div>
   </footer>
 
@@ -457,10 +457,17 @@
         const pickedRow = document.getElementById('pickedRow');
         if (pickedRow) {
           const liveIds = new Set(auctions.slice(0, 4).map(a => String(a.id)));
-          const picked = [...auctions]
-            .filter(a => !liveIds.has(String(a.id)))
-            .sort((a, b) => (b.bidCount || 0) - (a.bidCount || 0) || (new Date(a.endTime) - new Date(b.endTime)))
-            .slice(0, 4);
+          let picked = [];
+          if (user) {
+            const personalized = await api.get('/recommendations/for-you');
+            picked = Array.isArray(personalized) ? personalized.filter(a => !liveIds.has(String(a.id))).slice(0, 4) : [];
+          }
+          if (!picked.length) {
+            picked = [...auctions]
+              .filter(a => !liveIds.has(String(a.id)))
+              .sort((a, b) => (b.bidCount || 0) - (a.bidCount || 0) || (new Date(a.endTime) - new Date(b.endTime)))
+              .slice(0, 4);
+          }
           pickedRow.innerHTML = picked.map(a => UI.renderAuctionCard(a)).join('');
         }
       } else {

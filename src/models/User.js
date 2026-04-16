@@ -13,12 +13,25 @@ const UserSchema = new mongoose.Schema({
         city: { type: String, default: '' },
         country: { type: String, default: '' }
     },
-    trustScore: { type: Number, default: 0 },
+    trustScore: { type: Number, default: 100, min: 0, max: 100 },
     ratings: [{
         raterId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-        score: { type: Number },
-        comment: { type: String }
+        raterEmail: { type: String, default: '' },
+        context: { type: String, enum: ['buyer', 'seller'], default: 'seller' },
+        score: { type: Number, min: 1, max: 5 },
+        comment: { type: String, default: '' },
+        createdAt: { type: Date, default: Date.now }
     }],
+    buyerStats: {
+        completedBuys: { type: Number, default: 0 },
+        averageRating: { type: Number, default: 0 },
+        ratingCount: { type: Number, default: 0 }
+    },
+    sellerStats: {
+        completedSales: { type: Number, default: 0 },
+        averageRating: { type: Number, default: 0 },
+        ratingCount: { type: Number, default: 0 }
+    },
     walletBalance: { type: Number, default: 0 },
     watchlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Auction' }],
     notifications: [{
@@ -47,6 +60,15 @@ const UserSchema = new mongoose.Schema({
     campusVerified: { type: Boolean, default: false },
     hostelBlock: { type: String, default: '' },
     phoneNumber: { type: String, default: '' },
+    phoneVerification: {
+        verified: { type: Boolean, default: false },
+        verifiedAt: { type: Date, default: null },
+        pendingPhoneNumber: { type: String, default: '' },
+        otpHash: { type: String, default: '' },
+        otpExpiresAt: { type: Date, default: null },
+        lastSentAt: { type: Date, default: null },
+        attemptsRemaining: { type: Number, default: 5 }
+    },
     lastSeenAt: { type: Date, default: null },
     bidAgreements: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Auction' }],
     blockedUsers: [{ type: String }],

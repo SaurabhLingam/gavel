@@ -293,6 +293,8 @@
             <div class="seller-badge" style="margin-top:var(--space-3);">
               <strong>${auction.sellerName || 'Unknown seller'}</strong>
               <span>Trust ${auction.sellerTrustScore || 0}</span>
+              <span>${auction.sellerAverageRating ? `${auction.sellerAverageRating} ★` : 'No seller ratings yet'}</span>
+              <span>${auction.sellerCompletedSales > 0 ? `${auction.sellerCompletedSales} sale${auction.sellerCompletedSales === 1 ? '' : 's'}` : 'New seller'}</span>
               <span>Views ${auction.viewCount || 0}</span>
             </div>
 
@@ -301,11 +303,15 @@
               <p style="font-size:var(--text-4xl);font-family:var(--font-heading);" id="currentBidDisplay">${UI.formatPrice(auction.currentBid)}</p>
               <p class="text-muted text-sm" style="margin-top:var(--space-3);" id="timerDisplay">${auction.endTime ? UI.formatTime(auction.endTime) : ''}</p>
               <p class="text-muted text-sm" style="margin-top:var(--space-2);">Minimum next bid: ${UI.formatPrice(minBid)}</p>
+              <p class="text-muted text-sm" style="margin-top:var(--space-2);">Reserve escrow on win: ${auction.reservePrice ? UI.formatPrice(auction.reservePrice) : 'No reserve set'}</p>
               ${auction.status === 'closed' ? `
                 <div style="display:grid;gap:8px;margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--border-light);">
                   <p class="text-muted text-sm">Secured from buyer wallet: ${UI.formatPrice(auction.settlement?.securedAmount || 0)}</p>
                   <p class="text-muted text-sm">Remaining to settle after delivery: ${UI.formatPrice(auction.settlement?.remainingAmount || 0)}</p>
-                  ${(auction.settlement?.deliveryCode && isSeller) ? `<p class="text-muted text-sm">Delivery code to share at handoff: <strong style="color:var(--text-primary);">${auction.settlement.deliveryCode}</strong></p>` : ''}
+                  <p class="text-muted text-sm">Seller confirmed handoff: ${auction.settlement?.sellerConfirmedAt ? 'Yes' : 'Pending'}</p>
+                  <p class="text-muted text-sm">Buyer confirmed handoff: ${auction.settlement?.buyerConfirmedAt ? 'Yes' : 'Pending'}</p>
+                  ${(auction.settlement?.sellerCode && isSeller) ? `<p class="text-muted text-sm">Seller code to share with buyer: <strong style="color:var(--text-primary);">${auction.settlement.sellerCode}</strong></p>` : ''}
+                  ${(auction.settlement?.buyerCode && isWinner) ? `<p class="text-muted text-sm">Buyer code to share with seller: <strong style="color:var(--text-primary);">${auction.settlement.buyerCode}</strong></p>` : ''}
                 </div>
               ` : ''}
             </div>
@@ -330,6 +336,7 @@
                 ${isWinner ? `<a class="btn btn-primary btn-lg" href="/winner-confirmation.html?id=${auction.id}">You won. Continue</a>` : ''}
                 ${(isWinner || isSeller) ? `<a class="btn btn-secondary" href="/receipt.html?id=${auction.id}">Open receipt</a>` : ''}
                 ${isWinner ? `<button class="btn btn-secondary" onclick="confirmDelivery()">Confirm delivery with code</button>` : ''}
+                ${isSeller ? `<button class="btn btn-secondary" onclick="confirmSellerHandover()">Confirm handover as seller</button>` : ''}
                 ${(isWinner || isSeller) ? `<a class="btn btn-ghost" href="/dispute-center.html?id=${auction.id}">Open dispute portal</a>` : ''}
                 ${(isWinner || isSeller) ? `<button class="btn btn-ghost" onclick="leaveReview()">Leave a review</button>` : ''}
               </div>
@@ -536,10 +543,21 @@
           return;
         }
       }
+      if (!me?.user?.phoneVerified) {
+        const saved = await Site.ensurePhoneNumber({ force: true });
+        if (!saved) {
+          UI.toast('Phone verification is required before bidding.', 'error');
+          return;
+        }
+      }
       const res = await api.post('/bids/' + auction.id, { bidAmount: amount, bidAgreement: true });
       if (!res?.success) {
         if (res?.requiresPhoneNumber) {
           UI.toast('Add your phone number before bidding.', 'error');
+          return;
+        }
+        if (res?.requiresPhoneVerification) {
+          UI.toast('Verify your phone number with OTP before bidding.', 'error');
           return;
         }
         if (res?.requiresBidAgreement) {
@@ -595,11 +613,22 @@
           return;
         }
       }
+      if (!me?.user?.phoneVerified) {
+        const saved = await Site.ensurePhoneNumber({ force: true });
+        if (!saved) {
+          UI.toast('Phone verification is required before auto-bidding.', 'error');
+          return;
+        }
+      }
       UI.closeModal();
       const res = await api.post('/bids/auto-bid', { listingId: auction.id, maxAmount: amount, bidAgreement: requiresAgreement });
       if (!res?.success) {
         if (res?.requiresPhoneNumber) {
           UI.toast('Phone number is required before auto-bidding.', 'error');
+          return;
+        }
+        if (res?.requiresPhoneVerification) {
+          UI.toast('Verify your phone number with OTP before auto-bidding.', 'error');
           return;
         }
         if (res?.requiresBidAgreement) {
@@ -654,8 +683,14 @@
       UI.showModal(`
         <h3>Leave a review</h3>
         <div class="form-group" style="margin-top:var(--space-4);">
-          <label class="form-label">Score</label>
-          <input id="reviewScore" class="form-input" type="number" min="1" max="5" value="5">
+          <label class="form-label">Stars</label>
+          <select id="reviewScore" class="form-select">
+            <option value="5">5 stars</option>
+            <option value="4">4 stars</option>
+            <option value="3">3 stars</option>
+            <option value="2">2 stars</option>
+            <option value="1">1 star</option>
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">Comment</label>
@@ -679,10 +714,10 @@
 
     function confirmDelivery() {
       UI.showModal(`
-        <h3>Confirm delivery</h3>
-        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Enter the 6 digit handoff code shared by the seller. This marks the product as delivered and increases trust for both sides.</p>
+        <h3>Verify seller code</h3>
+        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Enter the seller's 6 digit code after receiving the product.</p>
         <div class="form-group" style="margin-top:var(--space-4);">
-          <label class="form-label">Delivery code</label>
+          <label class="form-label">Seller code</label>
           <input id="deliveryCodeInput" class="form-input" type="text" inputmode="numeric" maxlength="6" placeholder="123456">
         </div>
         <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
@@ -695,7 +730,7 @@
     async function submitDeliveryCode() {
       const code = String(document.getElementById('deliveryCodeInput')?.value || '').replace(/\D/g, '').slice(0, 6);
       if (code.length !== 6) {
-        UI.toast('Enter the 6 digit delivery code.', 'error');
+        UI.toast('Enter the 6 digit seller code.', 'error');
         return;
       }
       const res = await api.post('/delivery/' + auction.id + '/confirm', { code });
@@ -705,6 +740,37 @@
       }
       UI.closeModal();
       UI.toast('Delivery confirmed.', 'success');
+      setTimeout(() => window.location.reload(), 600);
+    }
+
+    async function confirmSellerHandover() {
+      UI.showModal(`
+        <h3>Verify buyer code</h3>
+        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Enter the buyer's 6 digit code after the product is handed over.</p>
+        <div class="form-group" style="margin-top:var(--space-4);">
+          <label class="form-label">Buyer code</label>
+          <input id="sellerConfirmCodeInput" class="form-input" type="text" inputmode="numeric" maxlength="6" placeholder="123456">
+        </div>
+        <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
+          <button class="btn btn-ghost" style="flex:1;" onclick="UI.closeModal()">Cancel</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="submitSellerCode()">Verify</button>
+        </div>
+      `);
+    }
+
+    async function submitSellerCode() {
+      const code = String(document.getElementById('sellerConfirmCodeInput')?.value || '').replace(/\D/g, '').slice(0, 6);
+      if (code.length !== 6) {
+        UI.toast('Enter the 6 digit buyer code.', 'error');
+        return;
+      }
+      const res = await api.post('/delivery/' + auction.id + '/seller-confirm', { code });
+      if (!res?.success) {
+        UI.toast(res?.error || 'Could not confirm handover.', 'error');
+        return;
+      }
+      UI.closeModal();
+      UI.toast(res?.released ? 'Handover confirmed and escrow released.' : 'Handover confirmed. Waiting for buyer confirmation.', 'success');
       setTimeout(() => window.location.reload(), 600);
     }
 

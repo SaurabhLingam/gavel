@@ -130,8 +130,8 @@ const Site = (() => {
             <div class="modal" style="max-width:520px;width:min(92vw,520px);padding:0;overflow:hidden;">
                 <div style="padding:var(--space-6);background:linear-gradient(135deg,var(--forest) 0%,var(--olive-dark) 100%);color:var(--parchment);">
                     <p style="font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;opacity:0.8;">Contact verification</p>
-                    <h3 style="margin-top:var(--space-2);font-size:var(--text-2xl);color:var(--parchment);">Add your phone number</h3>
-                    <p style="margin-top:var(--space-3);opacity:0.82;line-height:1.6;">This is required for post-auction coordination, delivery confirmation, and buyer-seller contact after the sale closes.</p>
+                    <h3 style="margin-top:var(--space-2);font-size:var(--text-2xl);color:var(--parchment);">Verify your phone number</h3>
+                    <p style="margin-top:var(--space-3);opacity:0.82;line-height:1.6;">OTP verification is required for bidding, delivery confirmation, and buyer-seller contact after the sale closes.</p>
                 </div>
                 <div style="padding:var(--space-6);">
                     <div style="display:grid;gap:var(--space-4);">
@@ -140,9 +140,14 @@ const Site = (() => {
                             <input id="sitePhoneInput" class="form-input" type="tel" inputmode="numeric" maxlength="10" placeholder="9876543210" autocomplete="tel">
                             <p id="sitePhoneHelp" class="text-muted text-sm" style="margin-top:var(--space-2);">Only Indian 10 digit mobile numbers are accepted.</p>
                         </div>
+                        <div class="form-group" id="siteOtpWrap" style="margin:0;display:none;">
+                            <label class="form-label" for="siteOtpInput">6 digit OTP</label>
+                            <input id="siteOtpInput" class="form-input" type="text" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+                            <p id="siteOtpHelp" class="text-muted text-sm" style="margin-top:var(--space-2);">Enter the OTP sent to your phone.</p>
+                        </div>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);">
                             <button type="button" class="btn btn-ghost" id="sitePhoneSkipBtn">Later</button>
-                            <button type="button" class="btn btn-primary" id="sitePhoneSaveBtn">Save number</button>
+                            <button type="button" class="btn btn-primary" id="sitePhoneSaveBtn">Send OTP</button>
                         </div>
                     </div>
                 </div>
@@ -163,8 +168,12 @@ const Site = (() => {
             const backdrop = buildPhoneModal();
             const input = backdrop.querySelector('#sitePhoneInput');
             const help = backdrop.querySelector('#sitePhoneHelp');
+            const otpWrap = backdrop.querySelector('#siteOtpWrap');
+            const otpInput = backdrop.querySelector('#siteOtpInput');
+            const otpHelp = backdrop.querySelector('#siteOtpHelp');
             const saveBtn = backdrop.querySelector('#sitePhoneSaveBtn');
             const skipBtn = backdrop.querySelector('#sitePhoneSkipBtn');
+            let pendingPhoneNumber = '';
 
             const close = (saved) => {
                 backdrop.remove();
@@ -180,6 +189,8 @@ const Site = (() => {
             const resetHelp = () => {
                 help.textContent = 'Only Indian 10 digit mobile numbers are accepted.';
                 help.style.color = '';
+                otpHelp.textContent = 'Enter the OTP sent to your phone.';
+                otpHelp.style.color = '';
             };
 
             input.addEventListener('input', () => {
@@ -197,30 +208,70 @@ const Site = (() => {
             });
 
             saveBtn.addEventListener('click', async () => {
-                const phoneNumber = normalizePhoneNumber(input.value);
-                if (!phoneNumber) {
-                    setError('Enter a valid 10 digit phone number.');
-                    input.focus();
+                if (otpWrap.style.display === 'none') {
+                    const phoneNumber = normalizePhoneNumber(input.value);
+                    if (!phoneNumber) {
+                        setError('Enter a valid 10 digit phone number.');
+                        input.focus();
+                        return;
+                    }
+                    saveBtn.disabled = true;
+                    saveBtn.textContent = 'Sending...';
+                    try {
+                        const response = await fetch('/api/phone/send-otp', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ phoneNumber })
+                        });
+                        const data = await response.json().catch(() => ({}));
+                        if (!response.ok || !data.success) {
+                            throw new Error(data.error || 'Could not send OTP.');
+                        }
+                        pendingPhoneNumber = phoneNumber;
+                        otpWrap.style.display = 'block';
+                        input.value = phoneNumber;
+                        input.setAttribute('readonly', 'readonly');
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = 'Verify OTP';
+                        if (data.devOtp) {
+                            otpHelp.textContent = `Development OTP: ${data.devOtp}`;
+                        }
+                        otpInput.focus();
+                    } catch (error) {
+                        setError(error.message || 'Could not send OTP.');
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = 'Send OTP';
+                    }
+                    return;
+                }
+
+                const otp = String(otpInput.value || '').replace(/\D/g, '').slice(0, 6);
+                if (otp.length !== 6) {
+                    otpHelp.textContent = 'Enter a valid 6 digit OTP.';
+                    otpHelp.style.color = 'var(--ember)';
+                    otpInput.focus();
                     return;
                 }
                 saveBtn.disabled = true;
-                saveBtn.textContent = 'Saving...';
+                saveBtn.textContent = 'Verifying...';
                 try {
-                    const response = await fetch('/api/profile/contact', {
+                    const response = await fetch('/api/phone/verify-otp', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'include',
-                        body: JSON.stringify({ phoneNumber })
+                        body: JSON.stringify({ phoneNumber: pendingPhoneNumber, otp })
                     });
                     const data = await response.json().catch(() => ({}));
                     if (!response.ok || !data.success) {
-                        throw new Error(data.error || 'Could not save phone number.');
+                        throw new Error(data.error || 'Could not verify OTP.');
                     }
                     close(true);
                 } catch (error) {
-                    setError(error.message || 'Could not save phone number.');
+                    otpHelp.textContent = error.message || 'Could not verify OTP.';
+                    otpHelp.style.color = 'var(--ember)';
                     saveBtn.disabled = false;
-                    saveBtn.textContent = 'Save number';
+                    saveBtn.textContent = 'Verify OTP';
                 }
             });
 
@@ -257,7 +308,8 @@ const Site = (() => {
             const response = await fetch('/api/me', { credentials: 'include' });
             if (!response.ok) return;
             const me = await response.json();
-            if (!me.loggedIn || String(me.user?.phoneNumber || '').trim()) return true;
+            if (!me.loggedIn) return true;
+            if (String(me.user?.phoneNumber || '').trim() && me.user?.phoneVerified) return true;
             if (window.location.pathname.endsWith('/signup.html') || window.location.pathname.endsWith('/login.html')) return;
             return await requestPhoneNumber(options);
         } catch (error) {

@@ -59,7 +59,10 @@
             <div class="stat-pill-label">Items Sold</div>
             <div class="stat-pill-value">0</div>
           </div>
-          <button class="btn btn-primary topup-trigger" onclick="addWalletFunds()">Top Up Wallet</button>
+          <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;justify-content:flex-end;">
+            <button class="btn btn-primary topup-trigger" onclick="addWalletFunds()">Top Up Wallet</button>
+            <button class="btn btn-secondary topup-trigger" onclick="withdrawWalletFunds()">Withdraw</button>
+          </div>
         </div>
       </div>
     </div>
@@ -162,7 +165,8 @@
         <div>
           <h4 style="font-size:var(--text-sm); font-weight:700; font-family:var(--font-body); margin-bottom:var(--space-4);">Legal</h4>
           <a href="terms-and-conditions.html" class="text-muted text-sm" style="display:block; margin-bottom:var(--space-2);">Terms</a>
-          <a href="admin-handbook.html" class="text-muted text-sm" style="display:block;">Admin</a>
+          <a href="admin-handbook.html" class="text-muted text-sm" style="display:block; margin-bottom:var(--space-2);">Admin</a>
+          <a href="terms-and-conditions.html" class="text-muted text-sm" style="display:block;">Terms &amp; Conditions</a>
         </div>
       </div>
       <div class="divider" style="margin-top:var(--space-10);"></div>

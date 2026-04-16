@@ -1,18 +1,286 @@
 const express = require('express');
+const crypto = require('crypto');
+const Razorpay = require('razorpay');
 const router = express.Router();
 const { requireLogin } = require('../middleware/auth');
 const User = require('../models/User');
 const Auction = require('../models/Auction');
 const Bid = require('../models/Bid');
+const Payment = require('../models/Payment');
 const AuditLog = require('../models/AuditLog');
 const { mapAuction, getBidCountMap, pushNotification } = require('../utils/auctionHelpers');
-const { SUPABASE_URL, SUPABASE_ANON_KEY, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = require('../config/env');
+const {
+    RAZORPAY_KEY_ID,
+    RAZORPAY_KEY_SECRET,
+    RAZORPAY_PAYMENT_LINK,
+    SMS_OTP_PROVIDER_URL,
+    SMS_OTP_PROVIDER_TOKEN
+} = require('../config/env');
+const {
+    getTreasuryUser,
+    ensureTreasuryUser,
+    creditTreasury,
+    debitTreasury,
+    normalizeCurrencyAmount
+} = require('../services/treasury');
+
+const razorpay = (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET)
+    ? new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET })
+    : null;
 
 function normalizeIndianPhoneNumber(input) {
     const digits = String(input || '').replace(/\D/g, '');
     if (digits.length === 10) return digits;
     if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
     return '';
+}
+
+function generateOtp() {
+    return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function hashOtp(phoneNumber, otp) {
+    return crypto.createHash('sha256').update(`${phoneNumber}:${otp}`).digest('hex');
+}
+
+async function sendSmsOtp(phoneNumber, otp) {
+    if (!SMS_OTP_PROVIDER_URL || !SMS_OTP_PROVIDER_TOKEN) {
+        return { delivered: false, fallbackOtp: otp };
+    }
+
+    const response = await fetch(SMS_OTP_PROVIDER_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${SMS_OTP_PROVIDER_TOKEN}`
+        },
+        body: JSON.stringify({
+            phoneNumber: `+91${phoneNumber}`,
+            message: `Your Gavel verification OTP is ${otp}. It expires in 10 minutes.`
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error('SMS_DELIVERY_FAILED');
+    }
+
+    return { delivered: true };
+}
+
+function getAuctionEscrowAmount(auction) {
+    const reservePrice = normalizeCurrencyAmount(auction?.reservePrice);
+    if (reservePrice > 0) return reservePrice;
+    return normalizeCurrencyAmount(auction?.settlement?.securedAmount);
+}
+
+function generateSettlementCode() {
+    return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function calculateTrustScoreFromRatings(ratings) {
+    const list = Array.isArray(ratings) ? ratings.filter((entry) => Number(entry.score) >= 1 && Number(entry.score) <= 5) : [];
+    if (!list.length) return 100;
+    const average = list.reduce((sum, entry) => sum + Number(entry.score || 0), 0) / list.length;
+    return Math.max(0, Math.min(100, Math.round((average / 5) * 100)));
+}
+
+function calculateAverageRating(ratings, context) {
+    const list = (Array.isArray(ratings) ? ratings : []).filter((entry) => entry.context === context);
+    if (!list.length) return 0;
+    return Number((list.reduce((sum, entry) => sum + Number(entry.score || 0), 0) / list.length).toFixed(1));
+}
+
+async function refreshUserReputation(user) {
+    user.ratings = Array.isArray(user.ratings) ? user.ratings : [];
+    user.buyerStats = user.buyerStats || {};
+    user.sellerStats = user.sellerStats || {};
+    const sellerRatings = user.ratings.filter((entry) => entry.context === 'seller');
+    const buyerRatings = user.ratings.filter((entry) => entry.context === 'buyer');
+    user.sellerStats.averageRating = calculateAverageRating(user.ratings, 'seller');
+    user.sellerStats.ratingCount = sellerRatings.length;
+    user.buyerStats.averageRating = calculateAverageRating(user.ratings, 'buyer');
+    user.buyerStats.ratingCount = buyerRatings.length;
+    user.trustScore = calculateTrustScoreFromRatings(user.ratings);
+    await user.save();
+}
+
+async function applyWalletTopupFromPayment(payment, options = {}) {
+    const paymentAmount = normalizeCurrencyAmount(payment.amount);
+    if (payment.status === 'paid') {
+        const existingUser = await User.findById(payment.userId);
+        const committedBidBalance = existingUser?.email ? await getCommittedBidBalance(existingUser.email) : 0;
+        return {
+            success: true,
+            newBalance: normalizeCurrencyAmount(existingUser?.walletBalance || 0),
+            committedBidBalance,
+            availableToWithdraw: Math.max(0, normalizeCurrencyAmount(existingUser?.walletBalance || 0) - committedBidBalance),
+            alreadyApplied: true
+        };
+    }
+
+    const user = await User.findById(payment.userId);
+    if (!user) {
+        throw new Error('User account not found.');
+    }
+
+    const treasury = await creditTreasury(paymentAmount);
+    if (!treasury) {
+        throw new Error('Treasury account could not be prepared.');
+    }
+
+    try {
+        user.walletBalance = normalizeCurrencyAmount(user.walletBalance) + paymentAmount;
+        await user.save();
+    } catch (error) {
+        await debitTreasury(paymentAmount).catch(() => {});
+        throw error;
+    }
+
+    payment.status = 'paid';
+    payment.razorpayPaymentId = options.razorpayPaymentId || payment.razorpayPaymentId || '';
+    payment.razorpaySignature = options.razorpaySignature || payment.razorpaySignature || '';
+    payment.paidAt = options.paidAt || new Date();
+    await payment.save();
+
+    const committedBidBalance = await getCommittedBidBalance(user.email);
+
+    await AuditLog.create({
+        action: 'WALLET_TOP_UP',
+        userEmail: payment.userEmail,
+        details: `Verified Razorpay top-up ₹${paymentAmount} into treasury and user wallet`,
+        ipAddress: options.ipAddress || ''
+    });
+
+    return {
+        success: true,
+        newBalance: user.walletBalance,
+        committedBidBalance,
+        availableToWithdraw: Math.max(0, normalizeCurrencyAmount(user.walletBalance) - committedBidBalance),
+        alreadyApplied: false
+    };
+}
+
+async function getSuccessfulRazorpayOrderPayment(orderId) {
+    if (!razorpay) return null;
+    const order = await razorpay.orders.fetch(orderId);
+    let paymentItems = [];
+    try {
+        const paymentsResponse = await razorpay.orders.fetchPayments(orderId);
+        paymentItems = Array.isArray(paymentsResponse?.items)
+            ? paymentsResponse.items
+            : Array.isArray(paymentsResponse)
+                ? paymentsResponse
+                : [];
+    } catch (error) {
+        paymentItems = [];
+    }
+
+    const successfulPayment = paymentItems.find((item) => ['captured', 'authorized', 'paid'].includes(String(item?.status || '').toLowerCase()));
+    return {
+        order,
+        successfulPayment: successfulPayment || null
+    };
+}
+
+async function getCommittedBidBalance(userEmail) {
+    const activeAuctions = await Auction.find({ status: 'active' }).select('_id reservePrice');
+    if (!activeAuctions.length) return 0;
+    const activeAuctionIds = activeAuctions.map((auction) => auction._id);
+    const activeBids = await Bid.find({ bidderEmail: userEmail, auctionId: { $in: activeAuctionIds } }).select('auctionId');
+    const participatingIds = new Set(activeBids.map((bid) => String(bid.auctionId)));
+    return activeAuctions
+        .filter((auction) => participatingIds.has(String(auction._id)))
+        .reduce((sum, auction) => sum + normalizeCurrencyAmount(auction.reservePrice || 0), 0);
+}
+
+function buildUserRecommendationScore(auction, signals) {
+    if (!auction || auction.status !== 'active') return -Infinity;
+    let score = 0;
+    const category = String(auction.category || '').trim();
+    const categorySignal = signals.categoryWeights[category] || 0;
+    score += categorySignal * 20;
+
+    const normalizedPrice = normalizeCurrencyAmount(auction.currentBid || auction.startingPrice || 0);
+    if (signals.preferredPrice > 0) {
+        const priceDelta = Math.abs(normalizedPrice - signals.preferredPrice);
+        score += Math.max(0, 30 - Math.round(priceDelta / Math.max(200, signals.preferredPrice * 0.1)));
+    }
+
+    if (signals.savedSearchTerms.some((term) => String(auction.title || '').toLowerCase().includes(term) || String(auction.description || '').toLowerCase().includes(term))) {
+        score += 18;
+    }
+    if (signals.college && auction.sellerCollege && auction.sellerCollege === signals.college) score += 8;
+    score += Math.min(15, Number(auction.bidCount || 0) * 2);
+    score += Math.min(10, Number(auction.viewCount || 0));
+    if (auction.endTime) {
+        const timeLeft = new Date(auction.endTime).getTime() - Date.now();
+        if (timeLeft > 0 && timeLeft < 24 * 60 * 60 * 1000) score += 10;
+    }
+    if (signals.watchlistIds.has(String(auction.id))) score += 12;
+    return score;
+}
+
+async function finalizeTreasuryRelease(auction, actorEmail) {
+    auction.settlement = auction.settlement || {};
+    const alreadyReleased = Boolean(auction.settlement.sellerWalletCredited);
+    const buyerConfirmed = Boolean(auction.settlement.buyerConfirmedAt);
+    const sellerConfirmed = Boolean(auction.settlement.sellerConfirmedAt);
+    const escrowAmount = getAuctionEscrowAmount(auction);
+    if (alreadyReleased || !buyerConfirmed || !sellerConfirmed || escrowAmount <= 0) {
+        return { released: false };
+    }
+
+    const seller = await User.findOne({ email: auction.sellerEmail });
+    if (!seller) {
+        throw new Error('SELLER_NOT_FOUND');
+    }
+
+    await debitTreasury(escrowAmount);
+    seller.walletBalance = normalizeCurrencyAmount(seller.walletBalance) + escrowAmount;
+    seller.sellerStats = seller.sellerStats || {};
+    seller.sellerStats.completedSales = Number(seller.sellerStats.completedSales || 0) + 1;
+    await seller.save();
+
+    const buyer = await User.findOne({ email: auction.winnerEmail });
+    if (buyer) {
+        buyer.buyerStats = buyer.buyerStats || {};
+        buyer.buyerStats.completedBuys = Number(buyer.buyerStats.completedBuys || 0) + 1;
+        await buyer.save();
+    }
+
+    auction.settlement.sellerWalletCredited = true;
+    auction.settlement.treasuryReleasedAmount = escrowAmount;
+    auction.settlement.creditedAt = new Date();
+    auction.settlement.deliveryConfirmedAt = new Date();
+    auction.settlement.releasedByEmail = actorEmail;
+    await auction.save();
+
+    await pushNotification(auction.sellerEmail, {
+        type: 'seller_wallet_credited',
+        title: 'Seller wallet credited',
+        message: `Escrow for "${auction.title}" has been released to your wallet.`,
+        actionUrl: `/receipt.html?id=${auction._id}`,
+        metadata: { auctionId: auction._id.toString(), amount: escrowAmount }
+    });
+
+    if (auction.winnerEmail) {
+        await pushNotification(auction.winnerEmail, {
+            type: 'delivery_confirmed',
+            title: 'Both parties confirmed handover',
+            message: `Escrow for "${auction.title}" was released to the seller after both confirmations.`,
+            actionUrl: `/receipt.html?id=${auction._id}`,
+            metadata: { auctionId: auction._id.toString(), amount: escrowAmount }
+        });
+    }
+
+    await AuditLog.create({
+        action: 'TREASURY_ESCROW_RELEASED',
+        userEmail: actorEmail,
+        details: `Released ₹${escrowAmount} from treasury to seller ${auction.sellerEmail} for auction ${auction._id}`,
+        ipAddress: ''
+    });
+
+    return { released: true, amount: escrowAmount };
 }
 
 router.get('/profile', requireLogin, async (req, res) => {
@@ -26,12 +294,20 @@ router.get('/profile', requireLogin, async (req, res) => {
         const activeBids = await Bid.distinct('auctionId', { bidderEmail: user.email });
         const auctionsWon = await Auction.countDocuments({ winnerEmail: user.email, status: 'closed' });
         const watchlistCount = user.watchlist?.length || 0;
+        const committedBidBalance = await getCommittedBidBalance(user.email);
 
         res.json({
             id: user._id, email: user.email, name: user.fullname, role: user.role,
             college: user.college, campusVerified: user.campusVerified,
-            trustScore: user.trustScore, walletBalance: user.walletBalance,
+            trustScore: Number.isFinite(Number(user.trustScore)) ? Number(user.trustScore) : 100,
+            walletBalance: user.walletBalance,
+            committedBidBalance,
+            availableToWithdraw: Math.max(0, normalizeCurrencyAmount(user.walletBalance) - committedBidBalance),
             avatar: user.avatar, bio: user.bio, location: user.location,
+            phoneNumber: user.phoneNumber || '',
+            phoneVerified: Boolean(user.phoneVerification?.verified),
+            buyerStats: user.buyerStats || {},
+            sellerStats: user.sellerStats || {},
             stats: { activeListings, closedListings, pendingListings, rejectedListings, totalBids, activeBids: activeBids.length, auctionsWon, watchlistCount },
             createdAt: user.createdAt
         });
@@ -70,10 +346,103 @@ router.post('/profile/contact', requireLogin, async (req, res) => {
         if (!phoneNumber) return res.status(400).json({ error: 'Enter a valid 10 digit phone number' });
         const user = await User.findById(req.user.id);
         user.phoneNumber = phoneNumber;
+        user.phoneVerification = user.phoneVerification || {};
+        user.phoneVerification.verified = false;
+        user.phoneVerification.verifiedAt = null;
+        user.phoneVerification.pendingPhoneNumber = '';
+        user.phoneVerification.otpHash = '';
+        user.phoneVerification.otpExpiresAt = null;
         await user.save();
-        res.json({ success: true, phoneNumber: user.phoneNumber });
+        res.json({ success: true, phoneNumber: user.phoneNumber, phoneVerified: false });
     } catch (e) {
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.post('/phone/send-otp', requireLogin, async (req, res) => {
+    try {
+        const phoneNumber = normalizeIndianPhoneNumber(req.body.phoneNumber);
+        if (!phoneNumber) return res.status(400).json({ error: 'Enter a valid 10 digit phone number' });
+
+        const user = await User.findById(req.user.id);
+        user.phoneVerification = user.phoneVerification || {};
+        const lastSentAt = user.phoneVerification.lastSentAt ? new Date(user.phoneVerification.lastSentAt).getTime() : 0;
+        if (lastSentAt && Date.now() - lastSentAt < 60 * 1000) {
+            return res.status(429).json({ error: 'Please wait at least 60 seconds before requesting another OTP.' });
+        }
+
+        const otp = generateOtp();
+        user.phoneVerification.pendingPhoneNumber = phoneNumber;
+        user.phoneVerification.otpHash = hashOtp(phoneNumber, otp);
+        user.phoneVerification.otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        user.phoneVerification.lastSentAt = new Date();
+        user.phoneVerification.attemptsRemaining = 5;
+        user.phoneVerification.verified = false;
+        user.phoneVerification.verifiedAt = null;
+        await user.save();
+
+        const smsResult = await sendSmsOtp(phoneNumber, otp);
+        await AuditLog.create({
+            action: 'PHONE_OTP_SENT',
+            userEmail: req.user.email,
+            details: `OTP requested for ${phoneNumber}`,
+            ipAddress: req.ip
+        });
+
+        res.json({
+            success: true,
+            phoneNumber,
+            devOtp: process.env.NODE_ENV === 'production' ? undefined : smsResult.fallbackOtp
+        });
+    } catch (e) {
+        res.status(500).json({ error: 'Could not send OTP right now.' });
+    }
+});
+
+router.post('/phone/verify-otp', requireLogin, async (req, res) => {
+    try {
+        const otp = String(req.body.otp || '').replace(/\D/g, '').slice(0, 6);
+        if (otp.length !== 6) return res.status(400).json({ error: 'Enter the 6 digit OTP.' });
+
+        const user = await User.findById(req.user.id);
+        const verification = user.phoneVerification || {};
+        const pendingPhoneNumber = normalizeIndianPhoneNumber(verification.pendingPhoneNumber || user.phoneNumber);
+        if (!pendingPhoneNumber || !verification.otpHash || !verification.otpExpiresAt) {
+            return res.status(400).json({ error: 'Request a fresh OTP first.' });
+        }
+        if (new Date(verification.otpExpiresAt) < new Date()) {
+            return res.status(400).json({ error: 'OTP expired. Request a new code.' });
+        }
+        if (Number(verification.attemptsRemaining || 0) <= 0) {
+            return res.status(400).json({ error: 'No OTP attempts remaining. Request a new code.' });
+        }
+
+        const incomingHash = hashOtp(pendingPhoneNumber, otp);
+        if (incomingHash !== verification.otpHash) {
+            user.phoneVerification.attemptsRemaining = Math.max(0, Number(verification.attemptsRemaining || 0) - 1);
+            await user.save();
+            return res.status(400).json({ error: 'Invalid OTP.' });
+        }
+
+        user.phoneNumber = pendingPhoneNumber;
+        user.phoneVerification.verified = true;
+        user.phoneVerification.verifiedAt = new Date();
+        user.phoneVerification.pendingPhoneNumber = '';
+        user.phoneVerification.otpHash = '';
+        user.phoneVerification.otpExpiresAt = null;
+        user.phoneVerification.attemptsRemaining = 5;
+        await user.save();
+
+        await AuditLog.create({
+            action: 'PHONE_VERIFIED',
+            userEmail: req.user.email,
+            details: `Phone verified: ${pendingPhoneNumber}`,
+            ipAddress: req.ip
+        });
+
+        res.json({ success: true, phoneNumber: user.phoneNumber, phoneVerified: true });
+    } catch (e) {
+        res.status(500).json({ error: 'Could not verify OTP right now.' });
     }
 });
 
@@ -89,19 +458,6 @@ router.post('/watchlist/toggle', requireLogin, async (req, res) => {
         user.watchlist = watchlist;
         await user.save();
         res.json({ success: true, added, watchlist });
-    } catch (e) { res.status(500).json({ error: 'Server error' }); }
-});
-
-router.post('/deposit', requireLogin, async (req, res) => {
-    try {
-        const { amount } = req.body;
-        const num = Number(amount);
-        if (!num || num <= 0) return res.status(400).json({ error: 'Invalid amount' });
-        const user = await User.findById(req.user.id);
-        user.walletBalance = Number(user.walletBalance || 0) + num;
-        await user.save();
-        await AuditLog.create({ action: 'FUNDS_DEPOSITED', userEmail: req.user.email, details: `Deposited ₹${num}`, ipAddress: req.ip });
-        res.json({ success: true, newBalance: user.walletBalance });
     } catch (e) { res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -193,45 +549,214 @@ router.get('/my-bids', requireLogin, async (req, res) => {
 });
 
 router.get('/payments/razorpay/config', (req, res) => {
-    res.json({ enabled: Boolean(RAZORPAY_KEY_ID), keyId: RAZORPAY_KEY_ID });
+    res.json({
+        enabled: Boolean(razorpay),
+        keyId: RAZORPAY_KEY_ID,
+        paymentLink: RAZORPAY_PAYMENT_LINK || ''
+    });
+});
+
+router.post('/wallet/topup-bypass', requireLogin, async (req, res) => {
+    try {
+        const amount = normalizeCurrencyAmount(req.body.amount);
+        if (amount < 1) return res.status(400).json({ error: 'Enter a valid amount.' });
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User account not found.' });
+        user.walletBalance = normalizeCurrencyAmount(user.walletBalance) + amount;
+        await user.save();
+        const treasury = await creditTreasury(amount);
+        if (!treasury) return res.status(500).json({ error: 'Treasury account could not be prepared.' });
+        await AuditLog.create({
+            action: 'WALLET_TOP_UP',
+            userEmail: req.user.email,
+            details: `Bypass top-up ₹${amount} credited to user wallet and treasury`,
+            ipAddress: req.ip
+        });
+        res.json({ success: true, newBalance: user.walletBalance });
+    } catch (e) {
+        console.error('wallet/topup-bypass error:', e);
+        res.status(500).json({ error: e.message === 'Validation failed' ? 'Top-up failed validation.' : (e.message || 'Top-up failed.') });
+    }
+});
+
+router.post('/wallet/withdraw', requireLogin, async (req, res) => {
+    try {
+        const amount = normalizeCurrencyAmount(req.body.amount);
+        if (amount < 1) return res.status(400).json({ error: 'Enter a valid withdrawal amount.' });
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User account not found.' });
+        const committedBidBalance = await getCommittedBidBalance(req.user.email);
+        const availableToWithdraw = Math.max(0, normalizeCurrencyAmount(user.walletBalance) - committedBidBalance);
+        if (amount > availableToWithdraw) {
+            return res.status(400).json({
+                error: `Withdrawal blocked. ₹${availableToWithdraw.toLocaleString('en-IN')} is available after reserving active auction commitments.`,
+                availableToWithdraw,
+                committedBidBalance
+            });
+        }
+        const originalBalance = normalizeCurrencyAmount(user.walletBalance);
+        user.walletBalance = originalBalance - amount;
+        await user.save();
+        try {
+            await debitTreasury(amount);
+        } catch (error) {
+            user.walletBalance = originalBalance;
+            await user.save().catch(() => {});
+            throw error;
+        }
+        await AuditLog.create({
+            action: 'WALLET_WITHDRAWAL',
+            userEmail: req.user.email,
+            details: `Withdrew ₹${amount} from wallet`,
+            ipAddress: req.ip
+        });
+        res.json({ success: true, newBalance: user.walletBalance, committedBidBalance, availableToWithdraw: Math.max(0, user.walletBalance - committedBidBalance) });
+    } catch (e) {
+        console.error('wallet/withdraw error:', e);
+        if (e.message === 'TREASURY_INSUFFICIENT_FUNDS') {
+            return res.status(400).json({ error: 'Withdrawal failed because the treasury does not have enough funds yet.' });
+        }
+        res.status(500).json({ error: e.message || 'Withdrawal failed.' });
+    }
 });
 
 router.post('/payments/razorpay/order', requireLogin, async (req, res) => {
     try {
-        if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) return res.status(400).json({ error: 'Razorpay not configured' });
-        const { amount } = req.body;
-        const order = await fetch('https://api.razorpay.com/v1/orders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64') },
-            body: JSON.stringify({ amount: Number(amount) * 100, currency: 'INR', receipt: `gavel_${Date.now()}` })
-        }).then(r => r.json());
-        res.json({ keyId: RAZORPAY_KEY_ID, order });
-    } catch (e) { res.status(500).json({ error: 'Order creation failed' }); }
+        if (!razorpay) return res.status(400).json({ error: 'Razorpay not configured' });
+        const amount = normalizeCurrencyAmount(req.body.amount);
+        if (amount < 100) return res.status(400).json({ error: 'Minimum wallet top-up is ₹100.' });
+
+        const receipt = `gwl_${Date.now().toString(36)}_${String(req.user.id).slice(-8)}`;
+        const order = await razorpay.orders.create({
+            amount: amount * 100,
+            currency: 'INR',
+            receipt,
+            notes: {
+                userId: String(req.user.id),
+                userEmail: req.user.email,
+                purpose: 'wallet_topup'
+            }
+        });
+
+        await Payment.create({
+            userId: req.user.id,
+            userEmail: req.user.email,
+            amount,
+            receipt,
+            razorpayOrderId: order.id,
+            notes: { purpose: 'wallet_topup' }
+        });
+
+        res.json({ keyId: RAZORPAY_KEY_ID, order, paymentLink: RAZORPAY_PAYMENT_LINK || '' });
+    } catch (e) {
+        console.error('payments/razorpay/order error:', e);
+        res.status(500).json({ error: e.message || 'Order creation failed' });
+    }
 });
 
 router.post('/payments/razorpay/verify', requireLogin, async (req, res) => {
     try {
-        const crypto = require('crypto');
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+        if (!razorpay) return res.status(400).json({ error: 'Razorpay not configured' });
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+            return res.status(400).json({ error: 'Missing Razorpay verification fields.' });
+        }
         const expectedSig = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(`${razorpay_order_id}|${razorpay_payment_id}`).digest('hex');
         if (expectedSig !== razorpay_signature) return res.status(400).json({ error: 'Invalid signature' });
-        const order = await fetch(`https://api.razorpay.com/v1/orders/${razorpay_order_id}`, {
-            headers: { Authorization: 'Basic ' + Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64') }
-        }).then(r => r.json());
-        const amount = order.amount / 100;
-        const user = await User.findById(req.user.id);
-        user.walletBalance = Number(user.walletBalance || 0) + amount;
-        await user.save();
-        await AuditLog.create({ action: 'WALLET_TOP_UP', userEmail: req.user.email, details: `Razorpay top-up ₹${amount}` });
-        res.json({ success: true, newBalance: user.walletBalance });
-    } catch (e) { res.status(500).json({ error: 'Verification failed' }); }
+
+        const payment = await Payment.findOne({ razorpayOrderId: razorpay_order_id, userId: req.user.id });
+        if (!payment) return res.status(404).json({ error: 'Payment order not found.' });
+        const result = await applyWalletTopupFromPayment(payment, {
+            razorpayPaymentId: razorpay_payment_id,
+            razorpaySignature: razorpay_signature,
+            paidAt: new Date(),
+            ipAddress: req.ip
+        });
+        res.json(result);
+    } catch (e) {
+        console.error('payments/razorpay/verify error:', e);
+        res.status(500).json({ error: e.message || 'Verification failed' });
+    }
+});
+
+router.get('/payments/razorpay/status/:orderId', requireLogin, async (req, res) => {
+    try {
+        const orderId = String(req.params.orderId || '').trim();
+        if (!orderId) return res.status(400).json({ error: 'Missing order id.' });
+
+        const payment = await Payment.findOne({ razorpayOrderId: orderId, userId: req.user.id });
+        if (!payment) return res.status(404).json({ error: 'Payment order not found.' });
+
+        if (payment.status === 'paid') {
+            const currentUser = await User.findById(req.user.id);
+            const committedBidBalance = currentUser?.email ? await getCommittedBidBalance(currentUser.email) : 0;
+            return res.json({
+                success: true,
+                status: 'paid',
+                newBalance: normalizeCurrencyAmount(currentUser?.walletBalance || 0),
+                committedBidBalance,
+                availableToWithdraw: Math.max(0, normalizeCurrencyAmount(currentUser?.walletBalance || 0) - committedBidBalance)
+            });
+        }
+
+        if (!razorpay) {
+            return res.json({ success: false, status: payment.status, paymentLink: RAZORPAY_PAYMENT_LINK || '' });
+        }
+
+        const { order, successfulPayment } = await getSuccessfulRazorpayOrderPayment(orderId);
+        if (successfulPayment || normalizeCurrencyAmount((order?.amount_paid || 0) / 100) >= normalizeCurrencyAmount(payment.amount)) {
+            const result = await applyWalletTopupFromPayment(payment, {
+                razorpayPaymentId: successfulPayment?.id || payment.razorpayPaymentId || '',
+                paidAt: successfulPayment?.created_at ? new Date(Number(successfulPayment.created_at) * 1000) : new Date(),
+                ipAddress: req.ip
+            });
+            return res.json({ ...result, status: 'paid' });
+        }
+
+        const remoteStatus = String(order?.status || payment.status || 'created').toLowerCase();
+        if (['failed', 'cancelled'].includes(remoteStatus) && payment.status !== 'failed') {
+            payment.status = 'failed';
+            await payment.save();
+        }
+
+        return res.json({
+            success: false,
+            status: ['failed', 'cancelled'].includes(remoteStatus) ? 'failed' : 'created',
+            amount: payment.amount,
+            paymentLink: RAZORPAY_PAYMENT_LINK || ''
+        });
+    } catch (e) {
+        console.error('payments/razorpay/status error:', e);
+        res.status(500).json({ error: e.message || 'Unable to fetch payment status.' });
+    }
 });
 
 router.get('/dashboard/summary', requireLogin, async (req, res) => {
     try {
         const user = await User.findById(req.user.id).select('-passwordHash');
         const email = user.email;
-        const me = { id: user._id, email: user.email, fullname: user.fullname, name: user.fullname, role: user.role, walletBalance: user.walletBalance, trustScore: user.trustScore, isAdmin: user.isAdmin || user.isSuperAdmin, isSuperAdmin: user.isSuperAdmin, campusVerified: user.campusVerified, college: user.college, avatar: user.avatar, phoneNumber: user.phoneNumber || '' };
+        const treasuryUser = await getTreasuryUser();
+        const committedBidBalance = await getCommittedBidBalance(email);
+        const me = {
+            id: user._id,
+            email: user.email,
+            fullname: user.fullname,
+            name: user.fullname,
+            role: user.role,
+            walletBalance: user.walletBalance,
+            trustScore: Number.isFinite(Number(user.trustScore)) ? Number(user.trustScore) : 100,
+            isAdmin: user.isAdmin || user.isSuperAdmin,
+            isSuperAdmin: user.isSuperAdmin,
+            campusVerified: user.campusVerified,
+            college: user.college,
+            avatar: user.avatar,
+            phoneNumber: user.phoneNumber || '',
+            phoneVerified: Boolean(user.phoneVerification?.verified),
+            committedBidBalance,
+            availableToWithdraw: Math.max(0, normalizeCurrencyAmount(user.walletBalance) - committedBidBalance),
+            buyerStats: user.buyerStats || {},
+            sellerStats: user.sellerStats || {}
+        };
         const result = { user: me, me };
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -258,8 +783,13 @@ router.get('/dashboard/summary', requireLogin, async (req, res) => {
             unreadNotifications: (user.notifications || []).filter((n) => !n.read).length,
             profileCompleteness: completeness,
             wonPurchases: await Auction.countDocuments({ winnerEmail: email, status: 'closed' }),
-            platformUsers: await User.countDocuments()
+            platformUsers: await User.countDocuments(),
+            committedBidBalance,
+            availableToWithdraw: Math.max(0, normalizeCurrencyAmount(user.walletBalance) - committedBidBalance)
         };
+        if (user.isSuperAdmin) {
+            result.stats.treasuryBalance = treasuryUser?.walletBalance || 0;
+        }
 
         const myListings = await Auction.find({ sellerEmail: email }).sort({ createdAt: -1 }).limit(10);
         const bidCountMap = await getBidCountMap(myListings.map(a => a._id));
@@ -294,7 +824,7 @@ router.get('/dashboard/summary', requireLogin, async (req, res) => {
             currentBid: item.currentBid,
             sellerEmail: item.sellerEmail
         }));
-        const walletLogs = await AuditLog.find({ userEmail: email, action: { $in: ['FUNDS_DEPOSITED', 'WALLET_TOP_UP', 'BID_PLACED'] } }).sort({ createdAt: -1 }).limit(10);
+        const walletLogs = await AuditLog.find({ userEmail: email, action: { $in: ['WALLET_TOP_UP', 'BID_PLACED', 'WINNER_ESCROW_DEBITED', 'TREASURY_ESCROW_RELEASED'] } }).sort({ createdAt: -1 }).limit(10);
         result.walletActivity = walletLogs;
 
         if (user.isAdmin || user.isSuperAdmin) {
@@ -356,6 +886,57 @@ router.get('/analytics', async (req, res) => {
     } catch (e) { res.status(500).json({ error: 'Failed to fetch analytics' }); }
 });
 
+router.get('/recommendations/for-you', requireLogin, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select('-passwordHash');
+        const activeAuctions = await Auction.find({
+            status: 'active',
+            sellerEmail: { $ne: user.email }
+        }).sort({ endTime: 1, createdAt: -1 }).limit(100);
+        const mapped = await Promise.all(activeAuctions.map((auction) => mapAuction(auction)));
+
+        const userBids = await Bid.find({ bidderEmail: user.email }).populate('auctionId').limit(50);
+        const categoryWeights = {};
+        const trackCategory = (category, weight) => {
+            const key = String(category || '').trim();
+            if (!key) return;
+            categoryWeights[key] = (categoryWeights[key] || 0) + weight;
+        };
+
+        userBids.forEach((bid) => trackCategory(bid.auctionId?.category, 3));
+        (user.savedSearches || []).forEach((search) => trackCategory(search.category, 2));
+        const watchedAuctions = await Auction.find({ _id: { $in: user.watchlist || [] } }).select('category currentBid startingPrice');
+        watchedAuctions.forEach((auction) => trackCategory(auction.category, 4));
+
+        const priceSamples = [
+            ...watchedAuctions.map((auction) => Number(auction.currentBid || auction.startingPrice || 0)),
+            ...userBids.map((bid) => Number(bid.amount || 0))
+        ].filter((value) => value > 0);
+        const preferredPrice = priceSamples.length
+            ? Math.round(priceSamples.reduce((sum, value) => sum + value, 0) / priceSamples.length)
+            : 0;
+
+        const signals = {
+            categoryWeights,
+            preferredPrice,
+            watchlistIds: new Set((user.watchlist || []).map((id) => String(id))),
+            savedSearchTerms: (user.savedSearches || []).map((search) => String(search.query || '').trim().toLowerCase()).filter(Boolean),
+            college: user.college || ''
+        };
+
+        const scored = mapped
+            .map((auction) => ({ auction, score: buildUserRecommendationScore(auction, signals) }))
+            .filter((row) => Number.isFinite(row.score))
+            .sort((a, b) => b.score - a.score || Number(b.auction.bidCount || 0) - Number(a.auction.bidCount || 0))
+            .slice(0, 8)
+            .map((row) => row.auction);
+
+        res.json(scored);
+    } catch (e) {
+        res.status(500).json({ error: 'Could not load recommendations.' });
+    }
+});
+
 router.post('/admin-application', requireLogin, async (req, res) => {
     try {
         const { qualificationChecklist, note } = req.body;
@@ -389,7 +970,9 @@ router.post('/meetup/:auctionId', requireLogin, async (req, res) => {
     try {
         const auction = await Auction.findById(req.params.auctionId);
         if (!auction) return res.status(404).json({ error: 'Auction not found' });
-        if (![auction.sellerEmail, auction.winnerEmail].includes(req.user.email)) return res.status(403).json({ error: 'Unauthorized' });
+        if (![auction.sellerEmail, auction.winnerEmail].includes(req.user.email) && !(req.user.isAdmin || req.user.isSuperAdmin)) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
         auction.meetupSchedule = {
             proposedByEmail: req.user.email,
             proposedSlot: String(req.body.slot || '').trim(),
@@ -420,30 +1003,52 @@ router.post('/delivery/:auctionId/confirm', requireLogin, async (req, res) => {
         if (!auction) return res.status(404).json({ error: 'Auction not found' });
         if (req.user.email !== auction.winnerEmail) return res.status(403).json({ error: 'Only the buyer can confirm delivery' });
         const code = String(req.body.code || '').trim();
-        if (!code || code !== String(auction.settlement?.deliveryCode || '')) return res.status(400).json({ error: 'Invalid delivery code' });
+        if (!code || code !== String(auction.settlement?.sellerCode || '')) return res.status(400).json({ error: 'Invalid seller code' });
         auction.settlement = auction.settlement || {};
-        auction.settlement.deliveryConfirmedAt = new Date();
-        auction.settlement.releasedByEmail = req.user.email;
+        auction.settlement.sellerCodeVerifiedAt = new Date();
+        auction.settlement.buyerConfirmedAt = new Date();
         await auction.save();
-
-        const seller = await User.findOne({ email: auction.sellerEmail });
-        const buyer = await User.findOne({ email: auction.winnerEmail });
-        if (seller) {
-            seller.trustScore = Math.min(500, Number(seller.trustScore || 0) + 10);
-            await seller.save();
-        }
-        if (buyer) {
-            buyer.trustScore = Math.min(500, Number(buyer.trustScore || 0) + 5);
-            await buyer.save();
-        }
+        const releaseResult = await finalizeTreasuryRelease(auction, req.user.email);
         await pushNotification(auction.sellerEmail, {
             type: 'delivery_confirmed',
-            title: 'Delivery confirmed',
-            message: `The buyer confirmed delivery for "${auction.title}".`,
+            title: 'Buyer verified seller code',
+            message: releaseResult.released
+                ? `The buyer verified the seller code for "${auction.title}" and escrow has been released.`
+                : `The buyer verified the seller code for "${auction.title}". Seller must still verify the buyer code before escrow release.`,
             actionUrl: `/receipt.html?id=${auction._id}`,
             metadata: { auctionId: auction._id.toString() }
         });
-        res.json({ success: true });
+        res.json({ success: true, released: releaseResult.released });
+    } catch (e) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.post('/delivery/:auctionId/seller-confirm', requireLogin, async (req, res) => {
+    try {
+        const auction = await Auction.findById(req.params.auctionId);
+        if (!auction) return res.status(404).json({ error: 'Auction not found' });
+        if (req.user.email !== auction.sellerEmail) return res.status(403).json({ error: 'Only the seller can confirm handover' });
+        if (!auction.winnerEmail) return res.status(400).json({ error: 'This auction has no winning buyer.' });
+        const code = String(req.body.code || '').trim();
+        if (!code || code !== String(auction.settlement?.buyerCode || '')) return res.status(400).json({ error: 'Invalid buyer code' });
+
+        auction.settlement = auction.settlement || {};
+        auction.settlement.buyerCodeVerifiedAt = new Date();
+        auction.settlement.sellerConfirmedAt = new Date();
+        await auction.save();
+
+        const releaseResult = await finalizeTreasuryRelease(auction, req.user.email);
+        await pushNotification(auction.winnerEmail, {
+            type: 'seller_confirmed_handover',
+            title: 'Seller verified buyer code',
+            message: releaseResult.released
+                ? `The seller verified the buyer code for "${auction.title}" and escrow has been released.`
+                : `The seller verified the buyer code for "${auction.title}". Buyer must still verify the seller code before escrow release.`,
+            actionUrl: `/receipt.html?id=${auction._id}`,
+            metadata: { auctionId: auction._id.toString() }
+        });
+        res.json({ success: true, released: releaseResult.released });
     } catch (e) {
         res.status(500).json({ error: 'Server error' });
     }
@@ -486,13 +1091,29 @@ router.get('/disputes', requireLogin, async (req, res) => {
             ? { 'dispute.status': 'open' }
             : { $or: [{ sellerEmail: req.user.email }, { winnerEmail: req.user.email }], 'dispute.status': 'open' };
         const auctions = await Auction.find(query).sort({ 'dispute.createdAt': -1 }).limit(50);
+        const users = await User.find({
+            email: {
+                $in: auctions.flatMap((auction) => [auction.sellerEmail, auction.winnerEmail]).filter(Boolean)
+            }
+        }).select('email fullname phoneNumber phoneVerification');
+        const userMap = Object.fromEntries(users.map((user) => [user.email, user]));
         res.json(auctions.map((auction) => ({
             id: auction._id,
             title: auction.title,
             sellerEmail: auction.sellerEmail,
             winnerEmail: auction.winnerEmail,
             dispute: auction.dispute || {},
-            settlement: auction.settlement || {}
+            settlement: auction.settlement || {},
+            seller: userMap[auction.sellerEmail] ? {
+                name: userMap[auction.sellerEmail].fullname,
+                phoneNumber: userMap[auction.sellerEmail].phoneNumber || '',
+                phoneVerified: Boolean(userMap[auction.sellerEmail].phoneVerification?.verified)
+            } : null,
+            buyer: userMap[auction.winnerEmail] ? {
+                name: userMap[auction.winnerEmail].fullname,
+                phoneNumber: userMap[auction.winnerEmail].phoneNumber || '',
+                phoneVerified: Boolean(userMap[auction.winnerEmail].phoneVerification?.verified)
+            } : null
         })));
     } catch (e) {
         res.status(500).json({ error: 'Server error' });
@@ -522,11 +1143,16 @@ router.post('/reviews/:auctionId', requireLogin, async (req, res) => {
         if (!auction) return res.status(404).json({ error: 'Auction not found' });
         if (![auction.sellerEmail, auction.winnerEmail].includes(req.user.email)) return res.status(403).json({ error: 'Unauthorized' });
         const reviewerRole = req.user.email === auction.sellerEmail ? 'seller' : 'buyer';
+        const reviewTargetContext = reviewerRole === 'seller' ? 'buyer' : 'seller';
+        const score = Math.max(1, Math.min(5, Number(req.body.score || 0)));
+        if (!score) return res.status(400).json({ error: 'A star rating from 1 to 5 is required.' });
         auction.reviews = auction.reviews || [];
+        const alreadyReviewed = auction.reviews.some((review) => review.reviewerEmail === req.user.email && review.reviewerRole === reviewerRole);
+        if (alreadyReviewed) return res.status(400).json({ error: 'You have already reviewed this transaction.' });
         auction.reviews.push({
             reviewerEmail: req.user.email,
             reviewerRole,
-            score: Number(req.body.score || 0),
+            score,
             comment: String(req.body.comment || '').trim()
         });
         await auction.save();
@@ -534,10 +1160,14 @@ router.post('/reviews/:auctionId', requireLogin, async (req, res) => {
         const otherUser = otherEmail ? await User.findOne({ email: otherEmail }) : null;
         if (otherUser) {
             otherUser.ratings = otherUser.ratings || [];
-            otherUser.ratings.push({ score: Number(req.body.score || 0), comment: String(req.body.comment || '').trim() });
-            const trustDelta = Math.max(-2, Math.min(5, Number(req.body.score || 0) - 2));
-            otherUser.trustScore = Math.max(0, Math.min(500, Number(otherUser.trustScore || 0) + trustDelta));
-            await otherUser.save();
+            otherUser.ratings.push({
+                raterId: req.user.id,
+                raterEmail: req.user.email,
+                context: reviewTargetContext,
+                score,
+                comment: String(req.body.comment || '').trim()
+            });
+            await refreshUserReputation(otherUser);
         }
         res.json({ success: true });
     } catch (e) {
@@ -551,8 +1181,8 @@ router.get('/receipt/:auctionId', requireLogin, async (req, res) => {
         if (!auction) return res.status(404).json({ error: 'Auction not found' });
         if (![auction.sellerEmail, auction.winnerEmail].includes(req.user.email)) return res.status(403).json({ error: 'Unauthorized' });
         const [seller, buyer] = await Promise.all([
-            User.findOne({ email: auction.sellerEmail }).select('fullname phoneNumber walletBalance trustScore'),
-            User.findOne({ email: auction.winnerEmail }).select('fullname phoneNumber walletBalance trustScore')
+            User.findOne({ email: auction.sellerEmail }).select('fullname phoneNumber walletBalance trustScore phoneVerification sellerStats'),
+            User.findOne({ email: auction.winnerEmail }).select('fullname phoneNumber walletBalance trustScore phoneVerification buyerStats')
         ]);
         res.json({
             id: auction._id,
@@ -567,12 +1197,16 @@ router.get('/receipt/:auctionId', requireLogin, async (req, res) => {
             seller: seller ? {
                 name: seller.fullname,
                 phoneNumber: seller.phoneNumber || '',
-                trustScore: seller.trustScore || 0
+                trustScore: Number.isFinite(Number(seller.trustScore)) ? Number(seller.trustScore) : 100,
+                phoneVerified: Boolean(seller.phoneVerification?.verified),
+                sellerStats: seller.sellerStats || {}
             } : null,
             buyer: buyer ? {
                 name: buyer.fullname,
                 phoneNumber: buyer.phoneNumber || '',
-                trustScore: buyer.trustScore || 0
+                trustScore: Number.isFinite(Number(buyer.trustScore)) ? Number(buyer.trustScore) : 100,
+                phoneVerified: Boolean(buyer.phoneVerification?.verified),
+                buyerStats: buyer.buyerStats || {}
             } : null
         });
     } catch (e) {

@@ -9,11 +9,20 @@ const AuditLog = require('../models/AuditLog');
 
 const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 };
 
+function normalizeIndianPhoneNumber(input) {
+    const digits = String(input || '').replace(/\D/g, '');
+    if (digits.length === 10) return digits;
+    if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+    return '';
+}
+
 router.post('/register', authLimiter, async (req, res) => {
     try {
         if (!JWT_SECRET) return res.status(503).json({ error: 'Email authentication is disabled.' });
         const { fullname, email, password, college, phoneNumber } = req.body;
         if (!fullname || !email || !password || !phoneNumber) return res.status(400).json({ error: 'Missing fields' });
+        const normalizedPhoneNumber = normalizeIndianPhoneNumber(phoneNumber);
+        if (!normalizedPhoneNumber) return res.status(400).json({ error: 'Enter a valid 10 digit phone number' });
 
         const existing = await User.findOne({ email: email.toLowerCase() });
         if (existing) return res.status(400).json({ error: 'Email already registered' });
@@ -29,7 +38,16 @@ router.post('/register', authLimiter, async (req, res) => {
             email: email.toLowerCase(),
             passwordHash,
             college: college || null,
-            phoneNumber: String(phoneNumber || '').trim(),
+            phoneNumber: normalizedPhoneNumber,
+            phoneVerification: {
+                verified: false,
+                verifiedAt: null,
+                pendingPhoneNumber: '',
+                otpHash: '',
+                otpExpiresAt: null,
+                lastSentAt: null,
+                attemptsRemaining: 5
+            },
             campusVerified,
             isSuperAdmin: SUPER_ADMIN_EMAILS.includes(email.toLowerCase()),
             isAdmin: SUPER_ADMIN_EMAILS.includes(email.toLowerCase())
@@ -40,7 +58,7 @@ router.post('/register', authLimiter, async (req, res) => {
 
          await AuditLog.create({ action: 'USER_REGISTERED', userEmail: newUser.email, details: `Registered: ${fullname}` });
 
-        res.json({ success: true, user: { email: newUser.email, name: newUser.fullname, campusVerified, phoneNumber: newUser.phoneNumber } });
+        res.json({ success: true, user: { email: newUser.email, name: newUser.fullname, campusVerified, phoneNumber: newUser.phoneNumber, phoneVerified: false } });
     } catch (err) {
         console.error('Registration error:', err);
         res.status(500).json({ error: 'Server error during registration' });
@@ -60,7 +78,7 @@ router.post('/login', authLimiter, async (req, res) => {
 
          await AuditLog.create({ action: 'USER_LOGIN', userEmail: user.email, details: `Login: ${user.fullname}` });
 
-        res.json({ success: true, user: { email: user.email, name: user.fullname, role: user.role, phoneNumber: user.phoneNumber || '' } });
+        res.json({ success: true, user: { email: user.email, name: user.fullname, role: user.role, phoneNumber: user.phoneNumber || '', phoneVerified: Boolean(user.phoneVerification?.verified) } });
     } catch (err) {
         res.status(500).json({ error: 'Server error during login' });
     }
@@ -74,7 +92,8 @@ router.get('/me', require('../middleware/auth').requireLogin, async (req, res) =
             id: dbUser._id, email: dbUser.email, name: dbUser.fullname, role: dbUser.role,
             college: dbUser.college, campusVerified: dbUser.campusVerified, walletBalance: dbUser.walletBalance,
             isAdmin: dbUser.isAdmin || dbUser.isSuperAdmin, isSuperAdmin: dbUser.isSuperAdmin,
-            trustScore: dbUser.trustScore, avatar: dbUser.avatar, phoneNumber: dbUser.phoneNumber || ''
+            trustScore: dbUser.trustScore, avatar: dbUser.avatar, phoneNumber: dbUser.phoneNumber || '',
+            phoneVerified: Boolean(dbUser.phoneVerification?.verified)
         });
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch profile' });

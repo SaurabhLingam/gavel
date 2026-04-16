@@ -5,6 +5,11 @@ const AuditLog = require('../models/AuditLog');
 const Message = require('../models/Message');
 const { broadcastAuction } = require('./websocket');
 const { pushNotification, getConversationKey } = require('../utils/auctionHelpers');
+const { normalizeCurrencyAmount } = require('./treasury');
+
+function generateSettlementCode() {
+    return String(Math.floor(100000 + Math.random() * 900000));
+}
 
 async function closeAuction(auctionId) {
     try {
@@ -14,27 +19,49 @@ async function closeAuction(auctionId) {
         const highestBid = await Bid.findOne({ auctionId: auctionId }).sort({ amount: -1 });
 
         if (highestBid) {
+            const reserveAmount = normalizeCurrencyAmount(item.reservePrice || 0);
             item.winnerEmail = highestBid.bidderEmail;
             item.winnerName = highestBid.bidderName;
             item.winningBid = highestBid.amount;
             item.settlement = item.settlement || {};
-            item.settlement.securedAmount = Math.ceil(Number(highestBid.amount || 0) / 2);
-            item.settlement.remainingAmount = Math.max(0, Number(highestBid.amount || 0) - Number(item.settlement.securedAmount || 0));
-            item.settlement.deliveryCode = String(Math.floor(100000 + Math.random() * 900000));
-            item.settlement.sellerWalletCredited = true;
-            item.settlement.creditedAt = new Date();
+            item.settlement.securedAmount = reserveAmount;
+            item.settlement.remainingAmount = Math.max(0, Number(highestBid.amount || 0) - reserveAmount);
+            item.settlement.sellerCode = generateSettlementCode();
+            item.settlement.buyerCode = generateSettlementCode();
+            item.settlement.sellerWalletCredited = false;
+            item.settlement.creditedAt = null;
+            item.settlement.sellerCodeVerifiedAt = null;
+            item.settlement.buyerCodeVerifiedAt = null;
+            item.settlement.sellerConfirmedAt = null;
+            item.settlement.buyerConfirmedAt = null;
+            item.settlement.deliveryConfirmedAt = null;
+            item.settlement.releasedByEmail = '';
+            item.settlement.treasuryReleasedAmount = 0;
 
             const winner = await User.findOne({ email: highestBid.bidderEmail });
             if (winner) {
-                winner.trustScore = Math.min(500, Number(winner.trustScore || 0) + 5);
+                if (reserveAmount > 0) {
+                    if (normalizeCurrencyAmount(winner.walletBalance) < reserveAmount) {
+                        item.dispute = {
+                            status: 'open',
+                            raisedByEmail: 'system',
+                            reason: 'Winning buyer has insufficient wallet balance for reserve escrow.',
+                            notes: 'Admin intervention required before handover.',
+                            createdAt: new Date(),
+                            resolvedAt: null,
+                            resolvedByEmail: ''
+                        };
+                    } else {
+                        winner.walletBalance = normalizeCurrencyAmount(winner.walletBalance) - reserveAmount;
+                        await AuditLog.create({
+                            action: 'WINNER_ESCROW_DEBITED',
+                            userEmail: winner.email,
+                            details: `Debited ₹${reserveAmount} reserve escrow for auction ${item._id}`
+                        });
+                    }
+                }
+                winner.trustScore = Number.isFinite(Number(winner.trustScore)) ? Number(winner.trustScore) : 100;
                 await winner.save();
-            }
-
-            const seller = await User.findOne({ email: item.sellerEmail });
-            if (seller) {
-                seller.walletBalance = Number(seller.walletBalance || 0) + Number(item.settlement.securedAmount || 0);
-                seller.trustScore = Math.min(500, Number(seller.trustScore || 0) + 5);
-                await seller.save();
             }
 
             await pushNotification(highestBid.bidderEmail, {
@@ -52,7 +79,7 @@ async function closeAuction(auctionId) {
                 recipientEmail: highestBid.bidderEmail,
                 senderEmail: item.sellerEmail,
                 senderName: item.sellerName || 'Seller',
-                message: `Congratulations, you have won the bid for "${item.title}" at ₹${highestBid.amount.toLocaleString('en-IN')}. ₹${Number(item.settlement.securedAmount || 0).toLocaleString('en-IN')} has already been transferred to my seller wallet from Gavel. Please pay the remaining ₹${Number(item.settlement.remainingAmount || 0).toLocaleString('en-IN')} after the product is received, as per the terms between buyer and seller. Gavel recommends settling the remaining half only after delivery confirmation. Delivery code: ${item.settlement.deliveryCode}.`
+                message: `Congratulations, you have won the bid for "${item.title}" at ₹${highestBid.amount.toLocaleString('en-IN')}. Reserve escrow of ₹${Number(item.settlement.securedAmount || 0).toLocaleString('en-IN')} has been locked from your wallet and is being held by Gavel until both buyer and seller verify each other's settlement codes. Share your buyer code ${item.settlement.buyerCode} with the seller and ask the seller for their seller code ${item.settlement.sellerCode} at handoff.`
             });
 
             await pushNotification(item.sellerEmail, {

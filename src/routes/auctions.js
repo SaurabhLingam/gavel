@@ -10,6 +10,20 @@ const { getBidCountMap, mapAuction, normalizeAuctionDescription, pushNotificatio
 const { closeAuction } = require('../services/auctionScheduler');
 const { broadcastAuction, broadcastGlobalActivity } = require('../services/websocket');
 
+function validateReservePrice(startingPrice, reservePrice) {
+    const start = Number(startingPrice);
+    const reserve = Number(reservePrice || 0);
+    if (!reserve) return null;
+    if (!Number.isFinite(reserve) || reserve <= 0) return 'Reserve price must be greater than zero.';
+
+    const minReserve = Math.ceil(start * 0.30);
+    const maxReserve = Math.floor(start * 0.65);
+    if (reserve < minReserve || reserve > maxReserve) {
+        return `Reserve price must stay between 30% and 65% of the starting price (₹${minReserve.toLocaleString('en-IN')} to ₹${maxReserve.toLocaleString('en-IN')}).`;
+    }
+    return null;
+}
+
 async function notifySavedSearches(auction) {
     const users = await User.find({ 'alertPreferences.savedSearches': { $ne: false }, 'savedSearches.0': { $exists: true } });
     const title = String(auction.title || '').toLowerCase();
@@ -123,11 +137,14 @@ router.post('/sell', requireLogin, upload.fields([
         const normalizedTitle = String(title || '').trim();
         const normalizedDescription = normalizeAuctionDescription(description);
         const normalizedPrice = Number(price);
+        const normalizedReservePrice = Number(reservePrice || 0);
 
         let endTimeObj = endTime ? new Date(endTime) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         if (endTimeObj <= new Date()) return res.status(400).send('Auction end time must be in the future.');
         if (!normalizedTitle) return res.status(400).json({ success: false, message: 'Title is required.' });
         if (!Number.isFinite(normalizedPrice) || normalizedPrice <= 0) return res.status(400).json({ success: false, message: 'Starting price must be greater than zero.' });
+        const reserveValidationError = validateReservePrice(normalizedPrice, normalizedReservePrice);
+        if (reserveValidationError) return res.status(400).json({ success: false, message: reserveValidationError });
         if (!category) return res.status(400).json({ success: false, message: 'Category is required.' });
         if (!normalizedDescription) return res.status(400).json({ success: false, message: 'Description is required.' });
         if (!imageCount) return res.status(400).json({ success: false, message: 'At least one product image is required.' });
@@ -138,11 +155,12 @@ router.post('/sell', requireLogin, upload.fields([
             description: normalizedDescription,
             currentBid: parseInt(price) || 0,
             startingPrice: parseInt(price) || 0,
-            reservePrice: parseInt(reservePrice) || 0,
+            reservePrice: normalizedReservePrice || 0,
             increment: Math.max(1, parseInt(increment) || 500),
             category,
             condition: specifications.Condition || specifications.condition || '',
             verified: false,
+            sellerId: req.user.id,
             sellerEmail: req.user.email,
             sellerName: req.user.name,
             endTime: endTimeObj,
@@ -225,6 +243,8 @@ router.post('/update-price', requireLogin, async (req, res) => {
         if (item.sellerEmail !== req.user.email) return res.status(403).json({ success: false, message: 'Only the seller can update the price.' });
         const nextPrice = Number(newPrice);
         if (!Number.isFinite(nextPrice) || nextPrice <= 0) return res.status(400).json({ success: false, message: 'Invalid price.' });
+        const reserveValidationError = validateReservePrice(nextPrice, item.reservePrice || 0);
+        if (reserveValidationError) return res.status(400).json({ success: false, message: reserveValidationError });
         const previous = Number(item.currentBid || item.startingPrice || 0);
         item.currentBid = nextPrice;
         item.startingPrice = nextPrice;

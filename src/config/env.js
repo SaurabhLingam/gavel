@@ -5,6 +5,8 @@ const dotenv = require('dotenv');
 [
     path.resolve(process.cwd(), '.env'),
     path.resolve(process.cwd(), '.env.local'),
+    path.resolve(process.cwd(), 'src/.env'),
+    path.resolve(process.cwd(), 'src/.env.local'),
     path.resolve(process.cwd(), '..', '.env'),
     path.resolve(process.cwd(), '..', '.env.local')
 ].forEach((candidate) => {
@@ -21,6 +23,9 @@ module.exports = {
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',
+    RAZORPAY_PAYMENT_LINK: process.env.RAZORPAY_PAYMENT_LINK || '',
+    SMS_OTP_PROVIDER_URL: process.env.SMS_OTP_PROVIDER_URL || '',
+    SMS_OTP_PROVIDER_TOKEN: process.env.SMS_OTP_PROVIDER_TOKEN || '',
     SUPER_ADMIN_EMAILS: (process.env.SUPER_ADMIN_EMAILS || '')
         .split(',')
         .map(e => e.trim().toLowerCase())

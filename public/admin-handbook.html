@@ -73,7 +73,7 @@
 
       <aside class="handbook-card" id="become-admin">
         <h2>Become Admin</h2>
-        <p style="margin-top:var(--space-3);">If you meet the checklist below, submit your request. Gavel will save your application and open a mail draft to the super admin with the required details.</p>
+        <p style="margin-top:var(--space-3);">If you meet the checklist below, submit your request. Gavel will open a mail draft to chknaren6@gmail.com with the required details.</p>
         <div style="display:grid;gap:var(--space-3);margin-top:var(--space-5);">
           <label class="checklist-item"><input type="checkbox" class="admin-qual" value="Active campus member"><span>Active campus member</span></label>
           <label class="checklist-item"><input type="checkbox" class="admin-qual" value="Can review listings daily"><span>Can review listings daily</span></label>
@@ -82,6 +82,7 @@
         </div>
         <textarea id="adminApplyNote" class="form-textarea" style="margin-top:var(--space-4);min-height:120px;" placeholder="Why should you be a Gavel admin? Include your campus, availability, and prior moderation experience."></textarea>
         <button class="btn btn-primary" style="margin-top:var(--space-4);width:100%;" onclick="applyForAdmin()">Apply for admin</button>
+        <a href="/terms-and-conditions.html" class="btn btn-ghost" style="margin-top:var(--space-3);width:100%;">Terms &amp; Conditions</a>
       </aside>
     </div>
   </main>
@@ -106,14 +107,9 @@
       }
       const note = document.getElementById('adminApplyNote').value.trim();
       const user = Auth.getUser();
-      const res = await api.post('/admin-application', { qualificationChecklist: checklist, note });
-      if (!res?.success) {
-        UI.toast('Could not save the application right now.', 'error');
-        return;
-      }
       const subject = encodeURIComponent(`Admin application from ${user.name || user.email}`);
       const body = encodeURIComponent(`Applicant: ${user.name || ''}\nEmail: ${user.email}\n\nQualifications:\n- ${checklist.join('\n- ')}\n\nNote:\n${note}`);
-      window.location.href = `mailto:superadmin@gavel.local?subject=${subject}&body=${body}`;
+      window.location.href = `mailto:chknaren6@gmail.com?subject=${subject}&body=${body}`;
     }
   </script>
 </body>

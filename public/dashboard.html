@@ -173,6 +173,65 @@
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <script>
     let data = null;
+    let walletAutoRefreshTimer = null;
+    let activeWalletPollOrderId = '';
+
+    function delay(ms) {
+      return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    async function refreshDashboardSummary(options = {}) {
+      const response = await api.get(`/dashboard/summary?ts=${Date.now()}`);
+      if (!response || response.error) {
+        if (!options.silent) UI.toast(response?.error || 'Failed to refresh wallet state.', 'error');
+        return null;
+      }
+      data = response;
+      renderDashboard();
+      return response;
+    }
+
+    function startWalletAutoRefresh() {
+      if (walletAutoRefreshTimer) window.clearInterval(walletAutoRefreshTimer);
+      walletAutoRefreshTimer = window.setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          refreshDashboardSummary({ silent: true });
+        }
+      }, 20000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          refreshDashboardSummary({ silent: true });
+        }
+      });
+    }
+
+    async function pollWalletOrderStatus(orderId, amount) {
+      if (!orderId) return false;
+      activeWalletPollOrderId = orderId;
+      for (let attempt = 0; attempt < 24; attempt += 1) {
+        if (activeWalletPollOrderId !== orderId) return false;
+        const status = await api.get(`/payments/razorpay/status/${encodeURIComponent(orderId)}?ts=${Date.now()}`);
+        if (activeWalletPollOrderId !== orderId) return false;
+        if (status?.status === 'paid' || status?.success) {
+          activeWalletPollOrderId = '';
+          UI.closeModal();
+          await refreshDashboardSummary({ silent: true });
+          UI.toast(`Wallet credited with ${UI.formatPrice(amount)}.`, 'success');
+          return true;
+        }
+        if (status?.status === 'failed') {
+          activeWalletPollOrderId = '';
+          UI.toast(status?.error || 'Razorpay payment did not complete.', 'error');
+          return false;
+        }
+        await delay(3500);
+      }
+      if (activeWalletPollOrderId === orderId) {
+        activeWalletPollOrderId = '';
+        UI.toast('Payment is still pending. Your wallet will refresh automatically once Razorpay confirms it.', 'info');
+      }
+      return false;
+    }
 
     function attachLogoBehavior() {
       const logos = document.querySelectorAll('.navbar-brand');
@@ -199,10 +258,9 @@
       window.addEventListener('scroll', () => document.getElementById('navbar')?.classList.toggle('scrolled', window.scrollY > 20));
       document.getElementById('logoutBtn').style.display = 'inline-flex';
 
-      const res = await api.get('/dashboard/summary');
-      if (!res || res.error) { UI.toast('Failed to load dashboard', 'error'); return; }
-      data = res;
-      renderDashboard();
+      const res = await refreshDashboardSummary();
+      if (!res) return;
+      startWalletAutoRefresh();
     });
 
     function renderDashboard() {
@@ -211,7 +269,7 @@
 
       document.getElementById('greeting').textContent = `Hello, ${u.name || u.email}`;
       const role = u.isSuperAdmin ? 'Super Admin' : u.isAdmin ? 'Admin' : u.role || 'Bidder';
-      document.getElementById('subtitle').textContent = `${role} · Trust Score: ${u.trustScore || 0}`;
+      document.getElementById('subtitle').textContent = `${role} · Trust Score: ${u.trustScore || 100}`;
 
       let html = '';
 
@@ -219,10 +277,11 @@
         <div>
           <div class="wallet-label">Wallet Balance</div>
           <div class="wallet-balance">${UI.formatPrice(u.walletBalance || 0)}</div>
-          <div class="wallet-note">Wallet top-ups flow into Gavel's Razorpay test account first. When you become the highest bidder and win, the secured half is released to the seller wallet automatically, while the remaining half should only be settled after delivery confirmation.</div>
+          <div class="wallet-note">Wallet top-ups flow into the Gavel treasury first. Available to withdraw: ${UI.formatPrice((u.availableToWithdraw ?? s.availableToWithdraw) || 0)}. Active auction commitments locked: ${UI.formatPrice((u.committedBidBalance ?? s.committedBidBalance) || 0)}.</div>
         </div>
         <div class="wallet-actions">
           <button class="btn btn-sm" onclick="addFunds()">Add Funds</button>
+          <button class="btn btn-sm" onclick="withdrawFunds()">Withdraw</button>
         </div>
       </div>`;
 
@@ -321,11 +380,11 @@
     async function addFunds() {
       UI.showModal(`
         <h3>Top up your wallet</h3>
-        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Use Razorpay test mode to add buyer funds into Gavel. These funds secure your active bids and support post-auction settlement.</p>
+        <p style="margin-top:var(--space-3);color:var(--text-secondary);">You will be sent through Razorpay checkout. As soon as Razorpay confirms the payment, the same amount is credited to your wallet.</p>
         <div class="form-group" style="margin-top:var(--space-4);">
           <label class="form-label">Amount</label>
           <input id="walletTopupAmount" class="form-input" type="number" min="100" step="100" value="1000">
-          <p class="text-muted text-sm" style="margin-top:var(--space-2);">Minimum test top-up is ₹100.</p>
+          <p class="text-muted text-sm" style="margin-top:var(--space-2);">Minimum top-up is ₹100. The wallet view refreshes automatically after payment confirmation.</p>
         </div>
         <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
           <button class="btn btn-ghost" onclick="UI.closeModal()" style="flex:1;">Cancel</button>
@@ -340,66 +399,84 @@
         UI.toast('Enter a valid amount of at least ₹100.', 'error');
         return;
       }
-
-      const config = await api.get('/payments/razorpay/config');
-      if (!config?.enabled || !config?.keyId) {
-        const fallback = await api.post('/deposit', { amount: num });
-        if (!fallback?.success) {
-          UI.toast(fallback?.error || 'Wallet top-up failed.', 'error');
+      const orderResponse = await api.post('/payments/razorpay/order', { amount: num });
+      if (!orderResponse?.order?.id) {
+        if (orderResponse?.paymentLink) {
+          window.location.href = orderResponse.paymentLink;
           return;
         }
-        UI.closeModal();
-        syncWalletBalance(fallback.newBalance);
-        UI.toast(`Razorpay is not configured yet. Wallet credited directly with ${UI.formatPrice(num)} for local testing.`, 'success');
+        UI.toast(orderResponse?.error || 'Wallet top-up failed.', 'error');
+        return;
+      }
+      if (typeof window.Razorpay !== 'function') {
+        UI.toast('Razorpay checkout is not available right now.', 'error');
         return;
       }
 
-      if (typeof Razorpay !== 'function') {
-        UI.toast('Razorpay checkout script did not load.', 'error');
-        return;
-      }
+      const orderId = orderResponse.order.id;
+      void pollWalletOrderStatus(orderId, num);
 
-      const orderRes = await api.post('/payments/razorpay/order', { amount: num });
-      if (!orderRes?.order?.id) {
-        UI.toast(orderRes?.error || 'Could not create Razorpay order.', 'error');
-        return;
-      }
-
-      const razorpay = new Razorpay({
-        key: orderRes.keyId,
-        amount: orderRes.order.amount,
-        currency: orderRes.order.currency || 'INR',
-        name: 'Gavel Wallet',
-        description: 'Buyer wallet top-up',
-        order_id: orderRes.order.id,
-        prefill: {
-          name: data?.user?.name || '',
-          email: data?.user?.email || '',
-          contact: data?.user?.phoneNumber || ''
-        },
-        theme: { color: '#5c6b4f' },
-        modal: {
-          ondismiss: () => UI.toast('Wallet top-up cancelled.', 'info')
-        },
-        handler: async function (response) {
-          const verify = await api.post('/payments/razorpay/verify', response);
-          if (!verify?.success) {
-            UI.toast(verify?.error || 'Payment verification failed.', 'error');
+      const checkout = new window.Razorpay({
+        key: orderResponse.keyId,
+        order_id: orderId,
+        amount: orderResponse.order.amount,
+        currency: orderResponse.order.currency || 'INR',
+        name: 'Gavel',
+        description: `Wallet top-up of ${UI.formatPrice(num)}`,
+        notes: orderResponse.order.notes || {},
+        handler: async (response) => {
+          const verified = await api.post('/payments/razorpay/verify', response);
+          if (verified?.success) {
+            activeWalletPollOrderId = '';
+            UI.closeModal();
+            await refreshDashboardSummary({ silent: true });
+            UI.toast(`Wallet credited with ${UI.formatPrice(num)}.`, 'success');
             return;
           }
-          UI.closeModal();
-          syncWalletBalance(verify.newBalance);
-          UI.toast(`Wallet credited with ${UI.formatPrice(num)}.`, 'success');
-        }
+          UI.toast(verified?.error || 'Payment received. Waiting for Razorpay confirmation.', 'info');
+        },
+        modal: {
+          ondismiss: () => {
+            UI.toast('Checking payment status for the latest wallet top-up.', 'info');
+          }
+        },
+        theme: { color: '#365314' }
       });
 
-      razorpay.open();
+      checkout.open();
     }
 
-    function syncWalletBalance(newBalance) {
-      if (data?.user) data.user.walletBalance = newBalance;
-      const balEl = document.querySelector('.wallet-balance');
-      if (balEl) balEl.textContent = UI.formatPrice(newBalance);
+    async function withdrawFunds() {
+      const availableAmount = Number(data?.user?.availableToWithdraw ?? data?.stats?.availableToWithdraw ?? 0);
+      UI.showModal(`
+        <h3>Withdraw from wallet</h3>
+        <p style="margin-top:var(--space-3);color:var(--text-secondary);">You can only withdraw the amount not reserved for active auctions you are participating in.</p>
+        <div class="form-group" style="margin-top:var(--space-4);">
+          <label class="form-label">Amount</label>
+          <input id="walletWithdrawAmount" class="form-input" type="number" min="1" step="1" value="${Math.max(0, Math.min(availableAmount || 1000, 1000))}">
+          <p class="text-muted text-sm" style="margin-top:var(--space-2);">Available to withdraw right now: ${UI.formatPrice(availableAmount)}.</p>
+        </div>
+        <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
+          <button class="btn btn-ghost" onclick="UI.closeModal()" style="flex:1;">Cancel</button>
+          <button class="btn btn-primary" onclick="submitWithdraw()" style="flex:1;">Withdraw</button>
+        </div>
+      `);
+    }
+
+    async function submitWithdraw() {
+      const num = Number(document.getElementById('walletWithdrawAmount')?.value || 0);
+      if (!Number.isFinite(num) || num < 1) {
+        UI.toast('Enter a valid amount.', 'error');
+        return;
+      }
+      const withdraw = await api.post('/wallet/withdraw', { amount: num });
+      if (!withdraw?.success) {
+        UI.toast(withdraw?.error || 'Withdrawal failed.', 'error');
+        return;
+      }
+      UI.closeModal();
+      await refreshDashboardSummary({ silent: true });
+      UI.toast(`Withdrawal completed for ${UI.formatPrice(num)}.`, 'success');
     }
 
     async function markAllRead() {

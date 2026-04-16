@@ -60,6 +60,7 @@
       }
       const myEmail = Auth.getUser()?.email || '';
       const isBuyer = myEmail === receipt.winnerEmail;
+      const isSeller = myEmail === receipt.sellerEmail;
       const canDispute = [receipt.sellerEmail, receipt.winnerEmail].includes(myEmail);
       const deliveryConfirmed = Boolean(receipt.settlement?.deliveryConfirmedAt);
 
@@ -67,7 +68,7 @@
         <section class="receipt-card">
           <span class="badge ${deliveryConfirmed ? 'badge-approved' : 'badge-pending'}">${deliveryConfirmed ? 'Delivered' : 'In progress'}</span>
           <h1 style="font-size:var(--text-4xl);margin-top:var(--space-4);">Transaction receipt</h1>
-          <p class="text-muted" style="margin-top:var(--space-3);">Wallet-backed settlement for ${receipt.title}. The secured amount has already moved through Gavel, and the remaining amount should only be completed after delivery.</p>
+          <p class="text-muted" style="margin-top:var(--space-3);">Wallet-backed settlement for ${receipt.title}. The buyer reserve escrow is held by the Gavel treasury and only reaches the seller after both parties verify each other's codes.</p>
           <div class="receipt-summary">
             <div class="receipt-pill"><p class="text-muted text-sm">Final price</p><strong style="font-size:var(--text-2xl);">${UI.formatPrice(receipt.finalPrice || 0)}</strong></div>
             <div class="receipt-pill"><p class="text-muted text-sm">Secured in wallet</p><strong style="font-size:var(--text-2xl);">${UI.formatPrice(receipt.settlement?.securedAmount || 0)}</strong></div>
@@ -83,12 +84,17 @@
             <tr><td>Buyer</td><td>${receipt.buyer?.name || 'Buyer'} · ${receipt.winnerEmail}${receipt.buyer?.phoneNumber ? ` · ${receipt.buyer.phoneNumber}` : ''}</td></tr>
             <tr><td>Receipt date</td><td>${new Date(receipt.date).toLocaleString('en-IN')}</td></tr>
             <tr><td>Meetup</td><td>${receipt.meetupSchedule?.proposedSlot || 'Not scheduled yet'}${receipt.meetupSchedule?.location ? ` at ${receipt.meetupSchedule.location}` : ''}</td></tr>
+            <tr><td>Seller code</td><td>${isSeller ? (receipt.settlement?.sellerCode || 'Pending') : (receipt.settlement?.sellerCodeVerifiedAt ? 'Verified by buyer' : 'Visible to seller only')}</td></tr>
+            <tr><td>Buyer code</td><td>${isBuyer ? (receipt.settlement?.buyerCode || 'Pending') : (receipt.settlement?.buyerCodeVerifiedAt ? 'Verified by seller' : 'Visible to buyer only')}</td></tr>
             <tr><td>Seller wallet credited</td><td>${receipt.settlement?.sellerWalletCredited ? `Yes, on ${new Date(receipt.settlement.creditedAt).toLocaleString('en-IN')}` : 'Pending'}</td></tr>
-            <tr><td>Delivery status</td><td>${deliveryConfirmed ? `Confirmed by ${receipt.settlement.releasedByEmail || 'buyer'} on ${new Date(receipt.settlement.deliveryConfirmedAt).toLocaleString('en-IN')}` : 'Awaiting delivery code confirmation'}</td></tr>
+            <tr><td>Seller handover</td><td>${receipt.settlement?.sellerConfirmedAt ? `Confirmed on ${new Date(receipt.settlement.sellerConfirmedAt).toLocaleString('en-IN')}` : 'Pending'}</td></tr>
+            <tr><td>Buyer handover</td><td>${receipt.settlement?.buyerConfirmedAt ? `Confirmed on ${new Date(receipt.settlement.buyerConfirmedAt).toLocaleString('en-IN')}` : 'Pending'}</td></tr>
+            <tr><td>Delivery status</td><td>${deliveryConfirmed ? `Escrow released by ${receipt.settlement.releasedByEmail || 'system'} on ${new Date(receipt.settlement.deliveryConfirmedAt).toLocaleString('en-IN')}` : 'Awaiting both buyer and seller confirmation'}</td></tr>
             <tr><td>Dispute status</td><td>${receipt.dispute?.status === 'open' ? 'Open' : receipt.dispute?.status === 'resolved' ? 'Resolved' : 'No dispute'}</td></tr>
           </table>
           <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;margin-top:var(--space-6);">
             ${isBuyer && !deliveryConfirmed ? `<button class="btn btn-primary" onclick="confirmDelivery()">Enter delivery code</button>` : ''}
+            ${isSeller && !deliveryConfirmed ? `<button class="btn btn-primary" onclick="confirmSellerHandover()">Confirm handover</button>` : ''}
             ${canDispute ? `<a class="btn btn-secondary" href="/dispute-center.html?id=${receipt.id}">Open dispute portal</a>` : ''}
             <a class="btn btn-ghost" href="/chat.html?auction=${receipt.id}&with=${encodeURIComponent(isBuyer ? receipt.sellerEmail : receipt.winnerEmail)}">Open post-sale chat</a>
             <button class="btn btn-ghost" onclick="window.print()">Print receipt</button>
@@ -99,10 +105,10 @@
 
     function confirmDelivery() {
       UI.showModal(`
-        <h3>Confirm delivery</h3>
-        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Enter the 6 digit delivery code given by the seller at handoff.</p>
+        <h3>Verify seller code</h3>
+        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Enter the seller's 6 digit code given at handoff.</p>
         <div class="form-group" style="margin-top:var(--space-4);">
-          <label class="form-label">Delivery code</label>
+          <label class="form-label">Seller code</label>
           <input id="receiptDeliveryCode" class="form-input" type="text" inputmode="numeric" maxlength="6" placeholder="123456">
         </div>
         <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
@@ -116,7 +122,7 @@
       const id = new URLSearchParams(window.location.search).get('id');
       const code = String(document.getElementById('receiptDeliveryCode')?.value || '').replace(/\D/g, '').slice(0, 6);
       if (code.length !== 6) {
-        UI.toast('Enter a valid 6 digit code.', 'error');
+        UI.toast('Enter a valid 6 digit seller code.', 'error');
         return;
       }
       const res = await api.post('/delivery/' + id + '/confirm', { code });
@@ -126,6 +132,38 @@
       }
       UI.closeModal();
       UI.toast('Delivery confirmed.', 'success');
+      window.location.reload();
+    }
+
+    async function confirmSellerHandover() {
+      UI.showModal(`
+        <h3>Verify buyer code</h3>
+        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Enter the buyer's 6 digit code given at handoff.</p>
+        <div class="form-group" style="margin-top:var(--space-4);">
+          <label class="form-label">Buyer code</label>
+          <input id="receiptBuyerCode" class="form-input" type="text" inputmode="numeric" maxlength="6" placeholder="123456">
+        </div>
+        <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
+          <button class="btn btn-ghost" onclick="UI.closeModal()" style="flex:1;">Cancel</button>
+          <button class="btn btn-primary" onclick="submitSellerHandover()" style="flex:1;">Verify</button>
+        </div>
+      `);
+    }
+
+    async function submitSellerHandover() {
+      const id = new URLSearchParams(window.location.search).get('id');
+      const code = String(document.getElementById('receiptBuyerCode')?.value || '').replace(/\D/g, '').slice(0, 6);
+      if (code.length !== 6) {
+        UI.toast('Enter a valid 6 digit buyer code.', 'error');
+        return;
+      }
+      const res = await api.post('/delivery/' + id + '/seller-confirm', { code });
+      if (!res?.success) {
+        UI.toast(res?.error || 'Could not confirm handover.', 'error');
+        return;
+      }
+      UI.closeModal();
+      UI.toast(res?.released ? 'Handover confirmed and escrow released.' : 'Handover confirmed. Waiting for buyer confirmation.', 'success');
       window.location.reload();
     }
   </script>

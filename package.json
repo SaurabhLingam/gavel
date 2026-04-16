@@ -34,6 +34,7 @@
     "mongodb": "^7.1.0",
     "mongoose": "^9.3.2",
     "multer": "^2.1.1",
+    "razorpay": "^2.9.6",
     "ws": "^8.19.0"
   },
   "devDependencies": {

@@ -1,5 +1,66 @@
 let user = null;
 let profileState = null;
+let walletRefreshIntervalId = null;
+let activeWalletPollOrderId = '';
+
+function delay(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function refreshDashboardHomeSummary(options = {}) {
+    const profile = await api.get(`/dashboard/summary?ts=${Date.now()}`);
+    if (!profile || profile.error) {
+        if (!options.silent) UI.toast(profile?.error || 'Failed to refresh wallet state.', 'error');
+        return null;
+    }
+    profileState = profile || {};
+    updateStats(profileState?.me || profileState?.user || {});
+    updateCampusBadge(profileState?.me || profileState?.user || {});
+    updateWatchlistSubline(profileState?.watchlist || []);
+    return profileState;
+}
+
+function startWalletRefreshLoop() {
+    if (walletRefreshIntervalId) window.clearInterval(walletRefreshIntervalId);
+    walletRefreshIntervalId = window.setInterval(() => {
+        if (document.visibilityState === 'visible') {
+            refreshDashboardHomeSummary({ silent: true });
+        }
+    }, 20000);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            refreshDashboardHomeSummary({ silent: true });
+        }
+    });
+}
+
+async function pollWalletOrderStatus(orderId, amount) {
+    if (!orderId) return false;
+    activeWalletPollOrderId = orderId;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+        if (activeWalletPollOrderId !== orderId) return false;
+        const status = await api.get(`/payments/razorpay/status/${encodeURIComponent(orderId)}?ts=${Date.now()}`);
+        if (activeWalletPollOrderId !== orderId) return false;
+        if (status?.status === 'paid' || status?.success) {
+            activeWalletPollOrderId = '';
+            UI.closeModal();
+            await refreshDashboardHomeSummary({ silent: true });
+            UI.toast(`Wallet credited with ${UI.formatPrice(amount)}.`, 'success');
+            return true;
+        }
+        if (status?.status === 'failed') {
+            activeWalletPollOrderId = '';
+            UI.toast(status?.error || 'Razorpay payment did not complete.', 'error');
+            return false;
+        }
+        await delay(3500);
+    }
+    if (activeWalletPollOrderId === orderId) {
+        activeWalletPollOrderId = '';
+        UI.toast('Payment is still pending. The wallet amount will refresh after Razorpay confirms it.', 'info');
+    }
+    return false;
+}
 
 (async function initDashboardHome() {
     await Auth.init();
@@ -24,10 +85,11 @@ let profileState = null;
         document.getElementById('adminBanner')?.classList.remove('hide');
     }
 
-    const [profile, bids, endingSoon] = await Promise.all([
-        api.get('/dashboard/summary'),
+    const [profile, bids, endingSoon, recommended] = await Promise.all([
+        api.get(`/dashboard/summary?ts=${Date.now()}`),
         api.get('/my-bids'),
-        api.get('/auctions?sort=endingSoon&limit=6&lightweight=1')
+        api.get('/auctions?sort=endingSoon&limit=6&lightweight=1'),
+        api.get('/recommendations/for-you')
     ]);
 
     profileState = profile || {};
@@ -36,10 +98,9 @@ let profileState = null;
     updateWatchlistSubline(profileState?.watchlist || []);
     renderActivityStrip(bids || []);
     renderEndingSoon((endingSoon || []).slice(0, 4));
-    const endingIds = new Set((endingSoon || []).slice(0, 4).map((item) => String(item.id)));
-    const recommended = (endingSoon || []).filter((item) => !endingIds.has(String(item.id))).slice(0, 4);
-    renderRecommended(recommended);
+    renderRecommended(recommended || []);
     loadRecentlyViewed();
+    startWalletRefreshLoop();
     UI.startCountdowns();
 })();
 
@@ -58,7 +119,10 @@ function updateStats(summaryUser) {
     const walletEl = document.getElementById('walletPill');
     const activeBidsEl = document.getElementById('activeBidsPill');
     const itemsSoldEl = document.getElementById('itemsSoldPill');
-    if (walletEl) walletEl.querySelector('.stat-pill-value').textContent = UI.formatPrice(summaryUser.walletBalance || 0);
+    if (walletEl) {
+        walletEl.querySelector('.stat-pill-value').textContent = UI.formatPrice(summaryUser.walletBalance || 0);
+        walletEl.title = `Available to withdraw: ${UI.formatPrice(summaryUser.availableToWithdraw || 0)} · Active commitments: ${UI.formatPrice(summaryUser.committedBidBalance || 0)}`;
+    }
     if (activeBidsEl) activeBidsEl.querySelector('.stat-pill-value').textContent = stats.activeBids || 0;
     if (itemsSoldEl) itemsSoldEl.querySelector('.stat-pill-value').textContent = stats.soldListings || stats.closedListings || 0;
 }
@@ -184,10 +248,11 @@ function loadRecentlyViewed() {
 async function addWalletFunds() {
     UI.showModal(`
         <h3>Top up your wallet</h3>
-        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Use Razorpay test mode to add funds to the buyer wallet. Gavel secures the wallet-backed portion of winning bids from here.</p>
+        <p style="margin-top:var(--space-3);color:var(--text-secondary);">You will be redirected through Razorpay checkout. Once Razorpay confirms the payment, the same amount is credited to your wallet.</p>
         <div class="form-group" style="margin-top:var(--space-4);">
             <label class="form-label">Amount</label>
             <input id="dashboardHomeTopupAmount" class="form-input" type="number" min="100" step="100" value="1000">
+            <p class="text-muted text-sm" style="margin-top:var(--space-2);">Minimum top-up is ₹100. The wallet amount refreshes automatically after confirmation.</p>
         </div>
         <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
             <button class="btn btn-ghost" onclick="UI.closeModal()" style="flex:1;">Cancel</button>
@@ -202,63 +267,84 @@ async function startDashboardTopup() {
         UI.toast('Enter a valid amount of at least ₹100.', 'error');
         return;
     }
-
-    const config = await api.get('/payments/razorpay/config');
-    if (!config?.enabled || !config?.keyId) {
-        const fallback = await api.post('/deposit', { amount });
-        if (!fallback?.success) {
-            UI.toast(fallback?.error || 'Wallet top-up failed.', 'error');
+    const orderResponse = await api.post('/payments/razorpay/order', { amount });
+    if (!orderResponse?.order?.id) {
+        if (orderResponse?.paymentLink) {
+            window.location.href = orderResponse.paymentLink;
             return;
         }
-        applyWalletBalance(fallback.newBalance);
-        UI.closeModal();
-        UI.toast(`Wallet credited with ${UI.formatPrice(amount)} for local testing.`, 'success');
+        UI.toast(orderResponse?.error || 'Wallet top-up failed.', 'error');
+        return;
+    }
+    if (typeof window.Razorpay !== 'function') {
+        UI.toast('Razorpay checkout is not available right now.', 'error');
         return;
     }
 
-    if (typeof Razorpay !== 'function') {
-        UI.toast('Razorpay checkout script did not load.', 'error');
-        return;
-    }
+    const orderId = orderResponse.order.id;
+    void pollWalletOrderStatus(orderId, amount);
 
-    const orderRes = await api.post('/payments/razorpay/order', { amount });
-    if (!orderRes?.order?.id) {
-        UI.toast(orderRes?.error || 'Could not create Razorpay order.', 'error');
-        return;
-    }
-
-    const checkout = new Razorpay({
-        key: orderRes.keyId,
-        amount: orderRes.order.amount,
-        currency: orderRes.order.currency || 'INR',
-        order_id: orderRes.order.id,
-        name: 'Gavel Wallet',
-        description: 'Buyer wallet top-up',
-        prefill: {
-            name: profileState?.me?.name || profileState?.user?.name || '',
-            email: profileState?.me?.email || profileState?.user?.email || '',
-            contact: profileState?.me?.phoneNumber || profileState?.user?.phoneNumber || ''
-        },
-        theme: { color: '#5c6b4f' },
-        handler: async function (response) {
-            const verify = await api.post('/payments/razorpay/verify', response);
-            if (!verify?.success) {
-                UI.toast(verify?.error || 'Payment verification failed.', 'error');
+    const checkout = new window.Razorpay({
+        key: orderResponse.keyId,
+        order_id: orderId,
+        amount: orderResponse.order.amount,
+        currency: orderResponse.order.currency || 'INR',
+        name: 'Gavel',
+        description: `Wallet top-up of ${UI.formatPrice(amount)}`,
+        notes: orderResponse.order.notes || {},
+        handler: async (response) => {
+            const verified = await api.post('/payments/razorpay/verify', response);
+            if (verified?.success) {
+                activeWalletPollOrderId = '';
+                UI.closeModal();
+                await refreshDashboardHomeSummary({ silent: true });
+                UI.toast(`Wallet credited with ${UI.formatPrice(amount)}.`, 'success');
                 return;
             }
-            applyWalletBalance(verify.newBalance);
-            UI.closeModal();
-            UI.toast(`Wallet credited with ${UI.formatPrice(amount)}.`, 'success');
-        }
+            UI.toast(verified?.error || 'Payment received. Waiting for Razorpay confirmation.', 'info');
+        },
+        modal: {
+            ondismiss: () => {
+                UI.toast('Checking payment status for the latest wallet top-up.', 'info');
+            }
+        },
+        theme: { color: '#365314' }
     });
+
     checkout.open();
 }
 
-function applyWalletBalance(newBalance) {
-    if (profileState?.me) profileState.me.walletBalance = newBalance;
-    if (profileState?.user) profileState.user.walletBalance = newBalance;
-    const pill = document.getElementById('walletPill');
-    if (pill) pill.querySelector('.stat-pill-value').textContent = UI.formatPrice(newBalance);
+async function withdrawWalletFunds() {
+    const availableAmount = Number(profileState?.me?.availableToWithdraw ?? profileState?.user?.availableToWithdraw ?? 0);
+    UI.showModal(`
+        <h3>Withdraw from wallet</h3>
+        <p style="margin-top:var(--space-3);color:var(--text-secondary);">Withdrawals are blocked if the amount would reduce your balance below the reserve commitments for active auctions you are participating in.</p>
+        <div class="form-group" style="margin-top:var(--space-4);">
+            <label class="form-label">Amount</label>
+            <input id="dashboardHomeWithdrawAmount" class="form-input" type="number" min="1" step="1" value="${Math.max(0, Math.min(availableAmount || 1000, 1000))}">
+            <p class="text-muted text-sm" style="margin-top:var(--space-2);">Available to withdraw right now: ${UI.formatPrice(availableAmount)}.</p>
+        </div>
+        <div style="display:flex;gap:var(--space-3);margin-top:var(--space-5);">
+            <button class="btn btn-ghost" onclick="UI.closeModal()" style="flex:1;">Cancel</button>
+            <button class="btn btn-primary" onclick="startDashboardWithdraw()" style="flex:1;">Withdraw</button>
+        </div>
+    `);
+}
+
+async function startDashboardWithdraw() {
+    const amount = Number(document.getElementById('dashboardHomeWithdrawAmount')?.value || 0);
+    if (!Number.isFinite(amount) || amount < 1) {
+        UI.toast('Enter a valid amount.', 'error');
+        return;
+    }
+    const withdraw = await api.post('/wallet/withdraw', { amount });
+    if (!withdraw?.success) {
+        UI.toast(withdraw?.error || 'Withdrawal failed.', 'error');
+        return;
+    }
+    UI.closeModal();
+    await refreshDashboardHomeSummary({ silent: true });
+    UI.toast(`Withdrawal completed for ${UI.formatPrice(amount)}.`, 'success');
 }
 
 function escapeHtml(value) {

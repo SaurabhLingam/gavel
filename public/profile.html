@@ -121,9 +121,13 @@
 
     function renderProfile(p, bids) {
       const initials = (p.name || p.email || '?').charAt(0).toUpperCase();
-      const trust = p.trustScore || 0;
+      const trust = p.trustScore || 100;
       const trustPct = Math.min(100, Math.max(0, trust));
       const role = p.isSuperAdmin ? 'Super Admin' : p.isAdmin ? 'Admin' : (p.role || 'Bidder');
+      const sellerStats = p.sellerStats || {};
+      const buyerStats = p.buyerStats || {};
+      const sellerLabel = Number(sellerStats.completedSales || 0) > 0 ? `${sellerStats.completedSales} sale${sellerStats.completedSales === 1 ? '' : 's'}` : 'New seller';
+      const buyerLabel = Number(buyerStats.completedBuys || 0) > 0 ? `${buyerStats.completedBuys} buy${buyerStats.completedBuys === 1 ? '' : 's'}` : 'New buyer';
 
       let sidebar = `
         <div class="profile-sidebar reveal">
@@ -133,16 +137,20 @@
           ${p.campusVerified ? '<span class="badge badge-approved" style="margin-top:var(--space-2);">Campus Verified</span>' : ''}
           <div class="profile-meta">
             <div class="profile-meta-item"><strong>Email</strong>${p.email}</div>
+            <div class="profile-meta-item"><strong>Phone</strong>${p.phoneNumber || 'Not added'}${p.phoneVerified ? ' · Verified' : ' · Not verified'}</div>
             ${p.college ? `<div class="profile-meta-item"><strong>College</strong>${p.college}</div>` : ''}
             <div class="profile-meta-item"><strong>Joined</strong>${p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—'}</div>
           </div>
           <div class="trust-bar-wrap">
             <div class="trust-bar-label"><span>Trust Score</span><span>${trust}/100</span></div>
             <div class="trust-bar"><div class="trust-bar-fill" style="width:${trustPct}%"></div></div>
+            <div class="profile-meta-item" style="margin-top:var(--space-3);"><strong>Seller Rating</strong>${sellerStats.averageRating ? `${sellerStats.averageRating} ★ from ${sellerStats.ratingCount || 0} rating${sellerStats.ratingCount === 1 ? '' : 's'}` : sellerLabel}</div>
+            <div class="profile-meta-item"><strong>Buyer Rating</strong>${buyerStats.averageRating ? `${buyerStats.averageRating} ★ from ${buyerStats.ratingCount || 0} rating${buyerStats.ratingCount === 1 ? '' : 's'}` : buyerLabel}</div>
           </div>
           <div class="wallet-mini">
             <div class="wallet-mini-label">Wallet Balance</div>
             <div class="wallet-mini-value">${UI.formatPrice(p.walletBalance || 0)}</div>
+            <div class="profile-meta-item" style="text-align:center;margin-bottom:var(--space-3);"><strong>Available To Withdraw</strong>${UI.formatPrice(p.availableToWithdraw || 0)}</div>
             <button class="btn btn-sm btn-secondary" onclick="addFunds()">Add Funds</button>
           </div>
           <a href="sell-product.html" class="btn btn-primary btn-sm" style="margin-top:var(--space-4);width:100%;">+ New Listing</a>
@@ -158,6 +166,9 @@
             <div class="stat-card"><div class="stat-card-label">Active Bids</div><div class="stat-card-value">${st.activeBids || 0}</div></div>
             <div class="stat-card"><div class="stat-card-label">Auctions Won</div><div class="stat-card-value">${st.auctionsWon || 0}</div></div>
             <div class="stat-card"><div class="stat-card-label">Total Bids</div><div class="stat-card-value">${st.totalBids || 0}</div></div>
+            <div class="stat-card"><div class="stat-card-label">Sales</div><div class="stat-card-value">${sellerStats.completedSales || 0}</div></div>
+            <div class="stat-card"><div class="stat-card-label">Buys</div><div class="stat-card-value">${buyerStats.completedBuys || 0}</div></div>
+            <div class="stat-card"><div class="stat-card-label">Seller Status</div><div class="stat-card-value" style="font-size:var(--text-lg);">${sellerLabel}</div></div>
           </div>
 
           <div style="margin-top:var(--space-10);" class="reveal reveal-delay-1">
@@ -190,15 +201,7 @@
     }
 
     async function addFunds() {
-      const amount = prompt('Enter amount to add (₹):', '1000');
-      if (!amount) return;
-      const num = Number(amount);
-      if (!num || num <= 0) { UI.toast('Invalid amount', 'error'); return; }
-      const res = await api.post('/deposit', { amount: num });
-      if (res?.success) {
-        UI.toast(`₹${num.toLocaleString('en-IN')} added!`, 'success');
-        document.querySelector('.wallet-mini-value').textContent = UI.formatPrice(res.newBalance);
-      } else { UI.toast(res?.error || 'Deposit failed', 'error'); }
+      window.location.href = '/dashboard.html';
     }
   </script>
 </body>

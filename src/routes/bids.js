@@ -33,32 +33,16 @@ async function applyBidToAuction(options) {
 
     const latestBid = await Bid.findOne({ auctionId: item._id }).sort({ placedAt: -1 });
     const previousLeaderEmail = latestBid ? latestBid.bidderEmail : null;
-    const previousLeaderAmount = latestBid ? Number(latestBid.amount || 0) : 0;
-    const sameLeader = previousLeaderEmail === bidderEmail;
-    const newSecured = Math.ceil(numericAmount / 2);
-    const previousSecured = Math.ceil(previousLeaderAmount / 2);
-    const holdRequired = sameLeader ? Math.max(0, newSecured - previousSecured) : newSecured;
 
-    const dbUser = await User.findOne({ email: bidderEmail });
-    if (!dbUser || Number(dbUser.walletBalance || 0) < holdRequired) return null;
-
-    if (!sameLeader && previousLeaderEmail) {
-        const prevUser = await User.findOne({ email: previousLeaderEmail });
-        if (prevUser) {
-            prevUser.walletBalance = Number(prevUser.walletBalance || 0) + previousSecured;
-            await prevUser.save();
-            await pushNotification(previousLeaderEmail, {
-                type: 'outbid',
-                title: 'You\'ve been outbid!',
-                message: `Someone bid ₹${numericAmount.toLocaleString('en-IN')} on "${item.title}"`,
-                actionUrl: `/item-detail.html?id=${item._id}`,
-                metadata: { auctionId: item._id.toString() }
-            });
-        }
+    if (previousLeaderEmail && previousLeaderEmail !== bidderEmail) {
+        await pushNotification(previousLeaderEmail, {
+            type: 'outbid',
+            title: 'You\'ve been outbid!',
+            message: `Someone bid ₹${numericAmount.toLocaleString('en-IN')} on "${item.title}"`,
+            actionUrl: `/item-detail.html?id=${item._id}`,
+            metadata: { auctionId: item._id.toString() }
+        });
     }
-
-    dbUser.walletBalance = Number(dbUser.walletBalance || 0) - holdRequired;
-    await dbUser.save();
 
     const newBid = await Bid.create({
         auctionId: item._id,
@@ -71,8 +55,8 @@ async function applyBidToAuction(options) {
     item.currentBid = numericAmount;
     item.bidCount = (item.bidCount || 0) + 1;
     item.settlement = item.settlement || {};
-    item.settlement.securedAmount = newSecured;
-    item.settlement.remainingAmount = Math.max(0, numericAmount - newSecured);
+    item.settlement.securedAmount = Number(item.reservePrice || 0);
+    item.settlement.remainingAmount = Math.max(0, numericAmount - Number(item.reservePrice || 0));
     await item.save();
 
     trackBidActivity(item._id, bidderEmail);
@@ -145,6 +129,13 @@ async function handlePlaceBid(req, res) {
             if (!String(bidderUser?.phoneNumber || '').trim()) {
                 return { code: 400, body: { success: false, requiresPhoneNumber: true, message: 'Add your phone number before bidding.' } };
             }
+            if (!bidderUser?.phoneVerification?.verified) {
+                return { code: 400, body: { success: false, requiresPhoneVerification: true, message: 'Verify your phone number with OTP before bidding.' } };
+            }
+            const reserveAmount = Number(item.reservePrice || 0);
+            if (reserveAmount > 0 && Number(bidderUser.walletBalance || 0) < reserveAmount) {
+                return { code: 400, body: { success: false, message: `Your wallet must have at least ₹${reserveAmount.toLocaleString('en-IN')} to cover the reserve escrow if you win.` } };
+            }
             const previousBid = await Bid.findOne({ auctionId: item._id, bidderEmail: req.user.email });
             const hasAgreed = (bidderUser?.bidAgreements || []).some((auctionId) => String(auctionId) === String(item._id));
             if (!previousBid && !hasAgreed) {
@@ -167,7 +158,6 @@ async function handlePlaceBid(req, res) {
             }
 
             const newBid = await applyBidToAuction({ auction: item, bidderEmail: req.user.email, bidderName: req.user.name, amount });
-            if (!newBid) return { code: 400, body: { success: false, message: 'Insufficient funds. Please deposit to continue.' } };
 
             item = await Auction.findById(id);
 
@@ -226,6 +216,13 @@ router.post('/auto-bid', requireLogin, bidLimiter, async (req, res) => {
         const bidderUser = await User.findOne({ email: req.user.email });
         if (!String(bidderUser?.phoneNumber || '').trim()) {
             return res.status(400).json({ success: false, requiresPhoneNumber: true, message: 'Add your phone number before setting auto-bid.' });
+        }
+        if (!bidderUser?.phoneVerification?.verified) {
+            return res.status(400).json({ success: false, requiresPhoneVerification: true, message: 'Verify your phone number with OTP before setting auto-bid.' });
+        }
+        const reserveAmount = Number(item.reservePrice || 0);
+        if (reserveAmount > 0 && Number(bidderUser.walletBalance || 0) < reserveAmount) {
+            return res.status(400).json({ success: false, message: `Your wallet must have at least ₹${reserveAmount.toLocaleString('en-IN')} to cover the reserve escrow if you win.` });
         }
         const previousBid = await Bid.findOne({ auctionId: item._id, bidderEmail: req.user.email });
         const hasAgreed = (bidderUser?.bidAgreements || []).some((auctionId) => String(auctionId) === String(item._id));

@@ -60,6 +60,16 @@
         <li>Auto-bid uses your chosen maximum and only charges you if you win.</li>
         <li>Anti-snipe time extensions, reserve handling, and closing rules are enforced by the platform.</li>
         <li>Outbid notices, chat records, and bid history are part of the transaction record.</li>
+        <li>Wallet deposits are first held in the superadmin treasury account to reduce fraud risk and only released according to the verified post-auction settlement flow.</li>
+        <li>Withdrawals are blocked when the withdrawal would reduce your wallet below the reserve commitments for active auctions you are participating in.</li>
+      </ul>
+
+      <h2>Post-auction settlement</h2>
+      <ul>
+        <li>When an auction closes, the buyer's reserve escrow is locked from the buyer wallet and held in the superadmin treasury.</li>
+        <li>The seller and buyer each receive different settlement codes.</li>
+        <li>The buyer must verify the seller code and the seller must verify the buyer code.</li>
+        <li>Only after both codes are verified will the treasury release the escrow to the seller wallet.</li>
       </ul>
 
       <h2>Messaging and meetups</h2>

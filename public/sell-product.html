@@ -264,9 +264,9 @@
                 <p class="form-hint" id="price-suggestion" style="margin-top:var(--space-2);">Add a realistic opening price. Similar items will be suggested here.</p>
               </div>
               <div class="form-group">
-                <label class="form-label">Reserve Price (₹) <span class="text-muted" style="font-weight:400;">— Optional</span></label>
-                <input type="number" name="reservePrice" class="form-input" placeholder="Hidden minimum">
-                <p class="form-hint" style="margin-top:var(--space-2);">Use this if you want a minimum selling threshold that buyers cannot see.</p>
+                <label class="form-label">Reserve Escrow Price (₹) <span class="text-muted" style="font-weight:400;">— Optional</span></label>
+                <input type="number" name="reservePrice" class="form-input" placeholder="Explicit reserve amount">
+                <p class="form-hint" id="reserve-price-hint" style="margin-top:var(--space-2);">Reserve escrow is explicit in the transaction flow and must stay between 30% and 65% of the starting price.</p>
               </div>
             </div>
 
@@ -469,6 +469,7 @@
     const progressFill = document.getElementById('progress-fill');
     const previewBtn = document.getElementById('preview-btn');
     const priceSuggestion = document.getElementById('price-suggestion');
+    const reservePriceHint = document.getElementById('reserve-price-hint');
     const draftKey = 'gavel_sell_draft_v2';
 
     let imageFiles = [];
@@ -624,6 +625,24 @@
     form.addEventListener('change', persistDraft);
     setInterval(persistDraft, 30000);
 
+    function getReserveRange() {
+      const price = Number(form.price.value || 0);
+      if (!Number.isFinite(price) || price <= 0) return null;
+      return {
+        min: Math.ceil(price * 0.30),
+        max: Math.floor(price * 0.65)
+      };
+    }
+
+    function updateReserveHint() {
+      const range = getReserveRange();
+      if (!range) {
+        reservePriceHint.textContent = 'Reserve escrow is explicit in the transaction flow and must stay between 30% and 65% of the starting price.';
+        return;
+      }
+      reservePriceHint.textContent = `Allowed reserve escrow range for this opening price: ${UI.formatPrice(range.min)} to ${UI.formatPrice(range.max)}.`;
+    }
+
     function updateProgress() {
       const title = form.title.value.trim();
       const price = form.price.value;
@@ -655,6 +674,7 @@
       const canSubmit = Object.values(steps).every(Boolean);
       submitBtn.disabled = !canSubmit;
       submitHint.style.display = canSubmit ? 'none' : 'inline';
+      updateReserveHint();
     }
 
     async function loadSimilarListings() {
@@ -682,6 +702,13 @@
     function validateForm() {
       if (!form.title.value.trim()) return 'Title is required.';
       if (!form.price.value || Number(form.price.value) <= 0) return 'Starting price must be greater than zero.';
+      if (form.reservePrice.value) {
+        const reserve = Number(form.reservePrice.value);
+        const range = getReserveRange();
+        if (!range || reserve < range.min || reserve > range.max) {
+          return `Reserve escrow must stay between ${UI.formatPrice(range?.min || 0)} and ${UI.formatPrice(range?.max || 0)}.`;
+        }
+      }
       if (!catSelect.value) return 'Category is required.';
       if (!imageFiles.length) return 'Upload at least one image.';
       if (!(videoInput.files && videoInput.files[0])) return 'Upload a verification video.';
@@ -710,6 +737,7 @@
           <div style="display:flex;gap:var(--space-4);flex-wrap:wrap;">
             <span class="tag">${catSelect.value || 'Category pending'}</span>
             <strong>${UI.formatPrice(form.price.value || 0)}</strong>
+            ${form.reservePrice.value ? `<span class="tag">Reserve escrow ${UI.formatPrice(form.reservePrice.value)}</span>` : ''}
           </div>
           <p style="color:var(--text-secondary);white-space:pre-wrap;">${document.getElementById('base-description').value.trim() || 'Add description to see the preview.'}</p>
           ${specs ? `<table style="width:100%;border-collapse:collapse;background:var(--bg);border-radius:16px;overflow:hidden;">${specs}</table>` : ''}

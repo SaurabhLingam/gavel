@@ -70,7 +70,7 @@ async function mapAuction(doc, bidCountMap = null, options = {}) {
         ? (bidCountMap[doc._id.toString()] || 0)
         : await Bid.countDocuments({ auctionId: doc._id });
 
-    const seller = await User.findOne({ email: doc.sellerEmail }).select('fullname trustScore campusVerified college');
+    const seller = await User.findOne({ email: doc.sellerEmail }).select('fullname trustScore campusVerified college sellerStats');
     let hasRivalry = false;
     if (!lightweight) {
         const topBids = await Bid.find({ auctionId: doc._id }).sort({ amount: -1 }).limit(2).lean();
@@ -99,7 +99,10 @@ async function mapAuction(doc, bidCountMap = null, options = {}) {
         category: doc.category,
         sellerEmail: doc.sellerEmail,
         sellerName: doc.sellerName,
-        sellerTrustScore: Number(seller?.trustScore || 0),
+        sellerTrustScore: Number.isFinite(Number(seller?.trustScore)) ? Number(seller.trustScore) : 100,
+        sellerAverageRating: Number(seller?.sellerStats?.averageRating || 0),
+        sellerRatingCount: Number(seller?.sellerStats?.ratingCount || 0),
+        sellerCompletedSales: Number(seller?.sellerStats?.completedSales || 0),
         sellerCampusVerified: seller?.campusVerified || false,
         sellerCollege: seller?.college || null,
         status: doc.status,
@@ -120,6 +123,8 @@ async function mapAuction(doc, bidCountMap = null, options = {}) {
         reviewNotes: doc.reviewNotes || '',
         rejectionReason: doc.rejectionReason || '',
         assignedAdminEmail: doc.assignedAdminEmail || null,
+        settlement: doc.settlement || {},
+        dispute: doc.dispute || {},
         urgency,
         createdAt: doc.createdAt
     };

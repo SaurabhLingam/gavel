@@ -141,8 +141,8 @@
               <span class="badge ${active.dispute?.status === 'resolved' ? 'badge-approved' : 'badge-pending'}">${active.dispute?.status || 'open'}</span>
             </div>
             <div class="dispute-meta">
-              <div><p class="text-muted text-sm">Seller</p><strong>${active.sellerEmail || '—'}</strong></div>
-              <div><p class="text-muted text-sm">Buyer</p><strong>${active.winnerEmail || '—'}</strong></div>
+              <div><p class="text-muted text-sm">Seller</p><strong>${active.seller?.name || active.sellerEmail || '—'}</strong><br><span class="text-muted text-sm">${active.sellerEmail || '—'}${isAdmin && active.seller?.phoneNumber ? ` · ${active.seller.phoneNumber}` : ''}</span></div>
+              <div><p class="text-muted text-sm">Buyer</p><strong>${active.buyer?.name || active.winnerEmail || '—'}</strong><br><span class="text-muted text-sm">${active.winnerEmail || '—'}${isAdmin && active.buyer?.phoneNumber ? ` · ${active.buyer.phoneNumber}` : ''}</span></div>
               <div><p class="text-muted text-sm">Secured amount</p><strong>${UI.formatPrice(active.settlement?.securedAmount || 0)}</strong></div>
               <div><p class="text-muted text-sm">Delivery confirmed</p><strong>${active.settlement?.deliveryConfirmedAt ? 'Yes' : 'Pending'}</strong></div>
             </div>

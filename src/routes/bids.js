@@ -11,6 +11,16 @@ const AuditLog = require('../models/AuditLog');
 const { pushNotification } = require('../utils/auctionHelpers');
 const { broadcastAuction, broadcastGlobalActivity, trackBidActivity } = require('../services/websocket');
 
+function serializeBidForLiveUpdate(bid) {
+    if (!bid) return null;
+    return {
+        bidderName: bid.bidderName,
+        amount: Number(bid.amount || 0),
+        placedAt: bid.placedAt || new Date(),
+        triggeredSnipe: Boolean(bid.triggeredSnipe)
+    };
+}
+
 const auctionLocks = new Map();
 
 function withAuctionLock(auctionId, task) {
@@ -72,7 +82,8 @@ async function applyBidToAuction(options) {
         itemId: String(item._id),
         newBid: numericAmount,
         bidCount: item.bidCount,
-        reserve_met: numericAmount >= Number(item.reservePrice || 0)
+        reserve_met: numericAmount >= Number(item.reservePrice || 0),
+        latestBid: serializeBidForLiveUpdate(newBid)
     });
 
     return newBid;
@@ -181,9 +192,10 @@ async function handlePlaceBid(req, res) {
 
             await resolveAutoBids(item._id);
             const finalItem = await Auction.findById(item._id);
+            const finalLatestBid = await Bid.findOne({ auctionId: item._id }).sort({ placedAt: -1 });
             const bidCount = await Bid.countDocuments({ auctionId: item._id });
 
-            broadcastAuction(id, { type: 'bid_update', itemId: id, newBid: finalItem.currentBid, bidCount, reserve_met: finalItem.currentBid >= Number(finalItem.reservePrice || 0) });
+            broadcastAuction(id, { type: 'bid_update', itemId: id, newBid: finalItem.currentBid, bidCount, reserve_met: finalItem.currentBid >= Number(finalItem.reservePrice || 0), latestBid: serializeBidForLiveUpdate(finalLatestBid) });
             broadcastGlobalActivity({ message: `${req.user.name} placed ₹${finalItem.currentBid.toLocaleString('en-IN')} on "${item.title}"`, itemId: id, timestamp: new Date().toISOString() });
 
             return {
@@ -192,6 +204,7 @@ async function handlePlaceBid(req, res) {
                     success: true,
                     newBid: finalItem.currentBid,
                     bidCount,
+                    latestBid: serializeBidForLiveUpdate(finalLatestBid),
                     message: maxSnipeReached ? 'Bid placed, max extensions reached.' : 'Bid placed successfully!',
                     extensionTriggered
                 }
@@ -256,7 +269,7 @@ router.post('/:listingId', requireLogin, bidLimiter, handlePlaceBid);
 
 router.get('/:listingId', async (req, res) => {
     try {
-        const rows = await Bid.find({ auctionId: req.params.listingId }).sort({ amount: -1 });
+        const rows = await Bid.find({ auctionId: req.params.listingId }).sort({ placedAt: 1, amount: 1 });
         const enrichedBids = await Promise.all(rows.map(async r => {
             const user = await User.findOne({ email: r.bidderEmail }).select('college campusVerified');
             return {

@@ -6,6 +6,7 @@ const Message = require('../models/Message');
 const { broadcastAuction } = require('./websocket');
 const { pushNotification, getConversationKey } = require('../utils/auctionHelpers');
 const { normalizeCurrencyAmount } = require('./treasury');
+const { recordWalletTransaction } = require('./walletLedger');
 
 function generateSettlementCode() {
     return String(Math.floor(100000 + Math.random() * 900000));
@@ -52,12 +53,33 @@ async function closeAuction(auctionId) {
                             resolvedByEmail: ''
                         };
                     } else {
+                        const balanceBefore = normalizeCurrencyAmount(winner.walletBalance);
                         winner.walletBalance = normalizeCurrencyAmount(winner.walletBalance) - reserveAmount;
                         await AuditLog.create({
                             action: 'WINNER_ESCROW_DEBITED',
                             userEmail: winner.email,
                             details: `Debited ₹${reserveAmount} reserve escrow for auction ${item._id}`
                         });
+                        await recordWalletTransaction({
+                            userId: winner._id,
+                            userEmail: winner.email,
+                            direction: 'debit',
+                            type: 'escrow_reserved',
+                            title: 'Reserve escrow locked',
+                            details: `Reserve escrow of ₹${reserveAmount.toLocaleString('en-IN')} was locked for "${item.title}".`,
+                            amount: reserveAmount,
+                            balanceBefore,
+                            balanceAfter: normalizeCurrencyAmount(winner.walletBalance),
+                            auctionId: item._id,
+                            auctionTitle: item.title,
+                            counterpartyEmail: item.sellerEmail || '',
+                            counterpartyName: item.sellerName || '',
+                            source: 'auction_scheduler',
+                            meta: {
+                                winningBid: highestBid.amount,
+                                reserveAmount
+                            }
+                        }).catch((error) => console.error('wallet transaction log failed:', error));
                     }
                 }
                 winner.trustScore = Number.isFinite(Number(winner.trustScore)) ? Number(winner.trustScore) : 100;

@@ -69,8 +69,7 @@
           document.getElementById('statusText').textContent = 'Welcome, ' + (res.user.name || res.user.email) + '!';
           document.getElementById('statusDetail').textContent = 'Redirecting to your dashboard…';
           document.querySelector('.spinner').style.display = 'none';
-          // DASHBOARD-HOME ADDITION: redirect to dashboard-home.html
-          setTimeout(() => { window.location.href = '/dashboard-home.html'; }, 800);
+          setTimeout(() => { window.location.href = '/dashboard.html'; }, 800);
         } else {
           throw new Error(res?.error || 'Sync failed');
         }

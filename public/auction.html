@@ -84,11 +84,11 @@
       const logos = document.querySelectorAll('.navbar-brand');
       const user = Auth.getUser();
       logos.forEach(logo => {
-        logo.href = user ? '/dashboard-home.html' : '/';
+        logo.href = user ? '/dashboard.html' : '/';
         logo.addEventListener('click', (e) => {
           e.preventDefault();
           if (user) {
-            window.location.href = '/dashboard-home.html';
+            window.location.href = '/dashboard.html';
           } else {
             window.location.href = '/';
           }

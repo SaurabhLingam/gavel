@@ -6,6 +6,7 @@ const Auction = require('../models/Auction');
 const Bid = require('../models/Bid');
 const Media = require('../models/Media');
 const AuditLog = require('../models/AuditLog');
+const WalletTransaction = require('../models/WalletTransaction');
 const { mapAuction, pushNotification } = require('../utils/auctionHelpers');
 const { closeAuction } = require('../services/auctionScheduler');
 
@@ -42,6 +43,45 @@ router.get('/users', requireAdmin, async (req, res) => {
         const users = await User.find().select('-passwordHash').sort({ createdAt: -1 });
         res.json(users);
     } catch (e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+router.get('/wallet-ledger', requireSuperAdmin, async (req, res) => {
+    try {
+        const transactions = await WalletTransaction.find()
+            .sort({ createdAt: -1 })
+            .limit(200)
+            .populate('userId', 'fullname email role walletBalance');
+        const summary = {
+            totalDeposits: await WalletTransaction.countDocuments({ direction: 'credit', type: 'wallet_topup' }),
+            totalWithdrawals: await WalletTransaction.countDocuments({ direction: 'debit', type: 'wallet_withdrawal' }),
+            totalEscrowLocks: await WalletTransaction.countDocuments({ type: 'escrow_reserved' }),
+            totalEscrowReleases: await WalletTransaction.countDocuments({ type: 'escrow_released' })
+        };
+        res.json({
+            summary,
+            transactions: transactions.map((tx) => ({
+                id: tx._id,
+                userEmail: tx.userEmail,
+                userName: tx.userId?.fullname || '',
+                userRole: tx.userId?.role || '',
+                userWalletBalance: tx.userId?.walletBalance ?? null,
+                direction: tx.direction,
+                type: tx.type,
+                title: tx.title,
+                details: tx.details,
+                amount: tx.amount,
+                balanceBefore: tx.balanceBefore,
+                balanceAfter: tx.balanceAfter,
+                auctionTitle: tx.auctionTitle || '',
+                counterpartyName: tx.counterpartyName || '',
+                source: tx.source || '',
+                createdAt: tx.createdAt
+            }))
+        });
+    } catch (e) {
+        console.error('wallet-ledger error:', e);
+        res.status(500).json({ error: 'Server error' });
+    }
 });
 
 router.get('/logs', requireAdmin, async (req, res) => {

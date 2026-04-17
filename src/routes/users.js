@@ -8,6 +8,7 @@ const Auction = require('../models/Auction');
 const Bid = require('../models/Bid');
 const Payment = require('../models/Payment');
 const AuditLog = require('../models/AuditLog');
+const { getWalletTransactions, recordWalletTransaction } = require('../services/walletLedger');
 const { mapAuction, getBidCountMap, pushNotification } = require('../utils/auctionHelpers');
 const {
     RAZORPAY_KEY_ID,
@@ -123,13 +124,14 @@ async function applyWalletTopupFromPayment(payment, options = {}) {
         throw new Error('User account not found.');
     }
 
+    const balanceBefore = normalizeCurrencyAmount(user.walletBalance);
     const treasury = await creditTreasury(paymentAmount);
     if (!treasury) {
         throw new Error('Treasury account could not be prepared.');
     }
 
     try {
-        user.walletBalance = normalizeCurrencyAmount(user.walletBalance) + paymentAmount;
+        user.walletBalance = balanceBefore + paymentAmount;
         await user.save();
     } catch (error) {
         await debitTreasury(paymentAmount).catch(() => {});
@@ -143,6 +145,27 @@ async function applyWalletTopupFromPayment(payment, options = {}) {
     await payment.save();
 
     const committedBidBalance = await getCommittedBidBalance(user.email);
+    const balanceAfter = normalizeCurrencyAmount(user.walletBalance);
+
+    await recordWalletTransaction({
+        userId: user._id,
+        userEmail: user.email,
+        direction: 'credit',
+        type: 'wallet_topup',
+        title: 'Wallet top-up',
+        details: `Razorpay top-up of ₹${paymentAmount.toLocaleString('en-IN')} credited to your wallet.`,
+        amount: paymentAmount,
+        balanceBefore,
+        balanceAfter,
+        availableBefore: Math.max(0, balanceBefore - committedBidBalance),
+        availableAfter: Math.max(0, balanceAfter - committedBidBalance),
+        source: 'razorpay',
+        meta: {
+            paymentId: String(payment._id),
+            razorpayOrderId: payment.razorpayOrderId,
+            razorpayPaymentId: payment.razorpayPaymentId
+        }
+    }).catch((error) => console.error('wallet transaction log failed:', error));
 
     await AuditLog.create({
         action: 'WALLET_TOP_UP',
@@ -235,8 +258,9 @@ async function finalizeTreasuryRelease(auction, actorEmail) {
         throw new Error('SELLER_NOT_FOUND');
     }
 
+    const sellerBalanceBefore = normalizeCurrencyAmount(seller.walletBalance);
     await debitTreasury(escrowAmount);
-    seller.walletBalance = normalizeCurrencyAmount(seller.walletBalance) + escrowAmount;
+    seller.walletBalance = sellerBalanceBefore + escrowAmount;
     seller.sellerStats = seller.sellerStats || {};
     seller.sellerStats.completedSales = Number(seller.sellerStats.completedSales || 0) + 1;
     await seller.save();
@@ -254,6 +278,28 @@ async function finalizeTreasuryRelease(auction, actorEmail) {
     auction.settlement.deliveryConfirmedAt = new Date();
     auction.settlement.releasedByEmail = actorEmail;
     await auction.save();
+
+    await recordWalletTransaction({
+        userId: seller._id,
+        userEmail: seller.email,
+        direction: 'credit',
+        type: 'escrow_released',
+        title: 'Escrow released to wallet',
+        details: `Escrow of ₹${escrowAmount.toLocaleString('en-IN')} for "${auction.title}" was released to your wallet.`,
+        amount: escrowAmount,
+        balanceBefore: sellerBalanceBefore,
+        balanceAfter: normalizeCurrencyAmount(seller.walletBalance),
+        auctionId: auction._id,
+        auctionTitle: auction.title,
+        counterpartyEmail: auction.winnerEmail || '',
+        counterpartyName: auction.winnerName || '',
+        source: 'settlement',
+        meta: {
+            buyerConfirmedAt: auction.settlement.buyerConfirmedAt,
+            sellerConfirmedAt: auction.settlement.sellerConfirmedAt,
+            releasedByEmail: actorEmail
+        }
+    }).catch((error) => console.error('wallet transaction log failed:', error));
 
     await pushNotification(auction.sellerEmail, {
         type: 'seller_wallet_credited',
@@ -548,6 +594,25 @@ router.get('/my-bids', requireLogin, async (req, res) => {
     } catch (e) { res.status(500).json({ error: 'Server error' }); }
 });
 
+router.get('/wallet/history', requireLogin, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User account not found.' });
+        const committedBidBalance = await getCommittedBidBalance(req.user.email);
+        const transactions = await getWalletTransactions(req.user.email, 24);
+        res.json({
+            success: true,
+            transactions,
+            walletBalance: normalizeCurrencyAmount(user.walletBalance),
+            committedBidBalance,
+            availableToWithdraw: Math.max(0, normalizeCurrencyAmount(user.walletBalance) - committedBidBalance)
+        });
+    } catch (e) {
+        console.error('wallet/history error:', e);
+        res.status(500).json({ error: 'Could not load wallet history.' });
+    }
+});
+
 router.get('/payments/razorpay/config', (req, res) => {
     res.json({
         enabled: Boolean(razorpay),
@@ -562,10 +627,27 @@ router.post('/wallet/topup-bypass', requireLogin, async (req, res) => {
         if (amount < 1) return res.status(400).json({ error: 'Enter a valid amount.' });
         const user = await User.findById(req.user.id);
         if (!user) return res.status(404).json({ error: 'User account not found.' });
-        user.walletBalance = normalizeCurrencyAmount(user.walletBalance) + amount;
+        const balanceBefore = normalizeCurrencyAmount(user.walletBalance);
+        user.walletBalance = balanceBefore + amount;
         await user.save();
         const treasury = await creditTreasury(amount);
         if (!treasury) return res.status(500).json({ error: 'Treasury account could not be prepared.' });
+        const committedBidBalance = await getCommittedBidBalance(req.user.email);
+        await recordWalletTransaction({
+            userId: user._id,
+            userEmail: req.user.email,
+            direction: 'credit',
+            type: 'wallet_topup',
+            title: 'Wallet top-up',
+            details: `Manual top-up of ₹${amount.toLocaleString('en-IN')} credited to your wallet.`,
+            amount,
+            balanceBefore,
+            balanceAfter: normalizeCurrencyAmount(user.walletBalance),
+            availableBefore: Math.max(0, balanceBefore - committedBidBalance),
+            availableAfter: Math.max(0, normalizeCurrencyAmount(user.walletBalance) - committedBidBalance),
+            source: 'admin_tool',
+            meta: { bypass: true }
+        }).catch((error) => console.error('wallet transaction log failed:', error));
         await AuditLog.create({
             action: 'WALLET_TOP_UP',
             userEmail: req.user.email,
@@ -610,6 +692,22 @@ router.post('/wallet/withdraw', requireLogin, async (req, res) => {
             details: `Withdrew ₹${amount} from wallet`,
             ipAddress: req.ip
         });
+        const committedBidBalanceAfter = await getCommittedBidBalance(req.user.email);
+        await recordWalletTransaction({
+            userId: user._id,
+            userEmail: req.user.email,
+            direction: 'debit',
+            type: 'wallet_withdrawal',
+            title: 'Wallet withdrawal',
+            details: `Withdrew ₹${amount.toLocaleString('en-IN')} from your wallet.`,
+            amount,
+            balanceBefore: originalBalance,
+            balanceAfter: normalizeCurrencyAmount(user.walletBalance),
+            availableBefore: Math.max(0, originalBalance - committedBidBalance),
+            availableAfter: Math.max(0, normalizeCurrencyAmount(user.walletBalance) - committedBidBalanceAfter),
+            source: 'wallet',
+            meta: { requestedBy: req.user.email }
+        }).catch((error) => console.error('wallet transaction log failed:', error));
         res.json({ success: true, newBalance: user.walletBalance, committedBidBalance, availableToWithdraw: Math.max(0, user.walletBalance - committedBidBalance) });
     } catch (e) {
         console.error('wallet/withdraw error:', e);
@@ -826,6 +924,7 @@ router.get('/dashboard/summary', requireLogin, async (req, res) => {
         }));
         const walletLogs = await AuditLog.find({ userEmail: email, action: { $in: ['WALLET_TOP_UP', 'BID_PLACED', 'WINNER_ESCROW_DEBITED', 'TREASURY_ESCROW_RELEASED'] } }).sort({ createdAt: -1 }).limit(10);
         result.walletActivity = walletLogs;
+        result.walletHistory = await getWalletTransactions(email, 8);
 
         if (user.isAdmin || user.isSuperAdmin) {
             const assignedRequests = await Auction.find({ assignedAdminEmail: email, status: { $in: ['pending_review', 'under_review'] } }).sort({ createdAt: 1 });

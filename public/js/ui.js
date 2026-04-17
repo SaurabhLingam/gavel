@@ -72,10 +72,10 @@ const UI = {
             <h3 style="font-size:var(--text-sm);margin-bottom:0.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-body);font-weight:600;">${auction.title}</h3>
             <p class="text-muted" style="font-size:var(--text-xs);margin-bottom:0.5rem;">${auction.category || 'General'}</p>
             <div class="flex-between">
-              <span class="price price-small">${this.formatPrice(auction.currentBid)}</span>
+              <span class="price price-small card-current-bid">${this.formatPrice(auction.currentBid)}</span>
               ${auction.endTime ? `<span class="${timerClass}" data-countdown="${auction.endTime}">${this.formatTime(auction.endTime)}</span>` : ''}
             </div>
-            ${auction.bidCount ? `<p class="text-muted" style="font-size:var(--text-xs);margin-top:0.5rem;">${auction.bidCount} bid${auction.bidCount !== 1 ? 's' : ''}</p>` : ''}
+            ${auction.bidCount ? `<p class="text-muted card-bid-count" style="font-size:var(--text-xs);margin-top:0.5rem;">${auction.bidCount} bid${auction.bidCount !== 1 ? 's' : ''}</p>` : ''}
           </div>
         </a>`;
     },

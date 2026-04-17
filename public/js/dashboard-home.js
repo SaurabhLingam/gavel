@@ -73,7 +73,7 @@ async function pollWalletOrderStatus(orderId, amount) {
     if (!user) return;
 
     const logoLink = document.getElementById('logoLink');
-    if (logoLink) logoLink.href = '/dashboard-home.html';
+    if (logoLink) logoLink.href = '/dashboard.html';
 
     updateGreeting(user);
     document.getElementById('loginBtn')?.classList.add('hide');

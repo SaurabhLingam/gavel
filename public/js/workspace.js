@@ -224,13 +224,20 @@
     }
 
     function renderListings(items) {
-        if (!items.length) {
+        var visible = (items || []).filter(function(item) {
+            var status = String(item && item.status || '').toLowerCase();
+            if (['closed', 'cancelled', 'draft'].includes(status)) return false;
+            if (status === 'active' && item.endTime && new Date(item.endTime).getTime() <= Date.now()) return false;
+            return true;
+        });
+
+        if (!visible.length) {
             return emptyMarkup('No listings yet. Submit your first product for review.');
         }
 
         return '' +
             '<div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>Lot</th><th>Status</th><th>Assigned Admin</th><th>Current Bid</th><th>Result</th><th>Action</th></tr></thead><tbody>' +
-            items.map(function(item) {
+            visible.map(function(item) {
                 var result = item.status === 'closed'
                     ? (item.winnerEmail ? 'Sold for ' + formatCurrency(item.winningBid || item.currentBid || 0) : 'Closed without winner')
                     : 'In review / live';

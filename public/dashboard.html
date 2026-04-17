@@ -8,15 +8,12 @@
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/animations.css">
   <link rel="stylesheet" href="css/responsive.css">
+  <link rel="stylesheet" href="css/dashboard-home.css">
   <link rel="icon" href="images/logo.png">
   <style>
-    .dash-hero {
-      padding: var(--space-20) 0 var(--space-6);
-      background: linear-gradient(180deg, var(--cream) 0%, var(--parchment) 100%);
+    .dashboard-shell {
+      padding: var(--space-8) 0 var(--space-16);
     }
-    .dash-hero .container { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); }
-    .dash-hero h1 { font-size: var(--text-4xl); margin: 0; }
-    .dash-hero-welcome { color: var(--text-secondary); font-size: var(--text-lg); margin-top: var(--space-1); }
 
     .stat-grid {
       display: grid;
@@ -37,7 +34,7 @@
     .stat-card-value.text-ember { color: var(--ember); }
     .stat-card-value.text-gold { color: var(--gold); }
 
-    .dash-section { margin-top: var(--space-10); }
+    .dash-section { margin-top: var(--space-12); }
     .dash-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-5); }
     .dash-section-header h2 { font-size: var(--text-2xl); margin: 0; }
     .dash-section-header a { font-size: var(--text-sm); font-weight: 600; }
@@ -120,13 +117,107 @@
       color: rgba(250,247,242,0.86);
       max-width: 560px;
     }
+    .wallet-history {
+      display: grid;
+      gap: var(--space-4);
+    }
+    .wallet-history-empty {
+      padding: var(--space-5);
+      border-radius: var(--radius-xl);
+      border: 1px dashed var(--border-light);
+      color: var(--text-secondary);
+      background: var(--bg-raised);
+    }
+    .wallet-tx {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-4);
+      padding: var(--space-5);
+      border-radius: var(--radius-lg);
+      background: var(--bg-raised);
+      border: 1px solid var(--border-light);
+    }
+    .wallet-tx-main {
+      min-width: 0;
+      flex: 1;
+    }
+    .wallet-tx-title {
+      font-size: var(--text-sm);
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+    .wallet-tx-details {
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+    .wallet-tx-meta {
+      margin-top: 6px;
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+    .wallet-tx-side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      flex-shrink: 0;
+      text-align: right;
+    }
+    .wallet-tx-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: var(--text-xs);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .wallet-tx-badge.credit { background: rgba(92,107,79,0.12); color: var(--olive); }
+    .wallet-tx-badge.debit { background: rgba(224,107,72,0.12); color: var(--ember); }
+    .wallet-tx-badge.info { background: rgba(116,116,116,0.12); color: var(--text-secondary); }
+    .wallet-tx-amount {
+      font-family: var(--font-heading);
+      font-size: var(--text-lg);
+      color: var(--ink);
+      white-space: nowrap;
+    }
 
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+    .dashboard-stack {
+      display: grid;
+      gap: var(--space-8);
+    }
+    .dashboard-panel {
+      background: var(--bg-raised);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-2xl);
+      box-shadow: var(--shadow-sm);
+      padding: var(--space-6);
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-6);
+    }
+    .dashboard-note {
+      margin-top: var(--space-4);
+      padding: var(--space-4);
+      border-radius: var(--radius-xl);
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.14);
+      font-size: var(--text-sm);
+      line-height: 1.7;
+      color: rgba(250,247,242,0.86);
+      max-width: 560px;
+    }
 
     @media (max-width: 768px) {
       .stat-grid { grid-template-columns: repeat(2, 1fr); }
       .two-col { grid-template-columns: 1fr; }
-      .dash-hero h1 { font-size: var(--text-3xl); }
+      .dashboard-shell { padding-top: var(--space-6); }
     }
   </style>
 </head>
@@ -145,17 +236,43 @@
     </div>
   </div></nav>
 
-  <section class="dash-hero">
+  <section class="greeting-hero">
     <div class="container">
-      <div>
-        <h1 id="greeting">Dashboard</h1>
-        <p class="dash-hero-welcome" id="subtitle">Welcome back</p>
+      <div class="greeting-hero-inner">
+        <div class="greeting-left">
+          <h1 id="greetingText">Loading your dashboard...</h1>
+          <div class="campus-badge hide" id="campusBadge"></div>
+          <p class="greeting-subline" id="watchlistSubline">Track bids, wallet balance, and handoffs from one place.</p>
+        </div>
+        <div class="greeting-right">
+          <div class="stat-pill" id="walletPill">
+            <div class="stat-pill-label">₹ Wallet</div>
+            <div class="stat-pill-value">₹0</div>
+          </div>
+          <div class="stat-pill" id="activeBidsPill">
+            <div class="stat-pill-label">Active Bids</div>
+            <div class="stat-pill-value">0</div>
+          </div>
+          <div class="stat-pill" id="itemsSoldPill">
+            <div class="stat-pill-label">Items Sold</div>
+            <div class="stat-pill-value">0</div>
+          </div>
+          <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;justify-content:flex-end;">
+            <button class="btn btn-primary topup-trigger" onclick="addFunds()">Top Up Wallet</button>
+            <button class="btn btn-secondary topup-trigger" onclick="withdrawFunds()">Withdraw</button>
+          </div>
+        </div>
       </div>
-      <a href="sell-product.html" class="btn btn-primary btn-lg">+ New Listing</a>
     </div>
   </section>
 
-  <section style="padding:var(--space-4) 0 var(--space-16);">
+  <div class="admin-banner hide" id="adminBanner">
+    <div class="container">
+      <a href="admin-dashboard.html">Admin workspace →</a>
+    </div>
+  </div>
+
+  <section class="dashboard-shell">
     <div class="container">
       <div id="dashContent"><div class="flex-center" style="padding:2rem;"><div class="spinner"></div></div></div>
     </div>
@@ -173,22 +290,38 @@
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <script>
     let data = null;
+    let dashboardCollections = {
+      bids: [],
+      endingSoon: [],
+      recommended: []
+    };
     let walletAutoRefreshTimer = null;
     let activeWalletPollOrderId = '';
+    let dashboardRendered = false;
 
     function delay(ms) {
       return new Promise((resolve) => window.setTimeout(resolve, ms));
     }
 
     async function refreshDashboardSummary(options = {}) {
-      const response = await api.get(`/dashboard/summary?ts=${Date.now()}`);
-      if (!response || response.error) {
-        if (!options.silent) UI.toast(response?.error || 'Failed to refresh wallet state.', 'error');
+      const [summary, bids, endingSoon, recommended] = await Promise.all([
+        api.get(`/dashboard/summary?ts=${Date.now()}`),
+        api.get(`/my-bids?ts=${Date.now()}`),
+        api.get('/auctions?sort=endingSoon&limit=6&lightweight=1&ts=' + Date.now()),
+        api.get('/recommendations/for-you?ts=' + Date.now())
+      ]);
+      if (!summary || summary.error) {
+        if (!options.silent) UI.toast(summary?.error || 'Failed to refresh wallet state.', 'error');
         return null;
       }
-      data = response;
+      data = summary;
+      dashboardCollections = {
+        bids: Array.isArray(bids) ? bids : [],
+        endingSoon: Array.isArray(endingSoon) ? endingSoon : [],
+        recommended: Array.isArray(recommended) ? recommended : []
+      };
       renderDashboard();
-      return response;
+      return summary;
     }
 
     function startWalletAutoRefresh() {
@@ -197,7 +330,7 @@
         if (document.visibilityState === 'visible') {
           refreshDashboardSummary({ silent: true });
         }
-      }, 20000);
+      }, 60000);
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           refreshDashboardSummary({ silent: true });
@@ -238,11 +371,11 @@
       const user = Auth.getUser();
       logos.forEach(logo => {
         // Update href for right-click/open in new tab
-        logo.href = user ? '/dashboard-home.html' : '/';
+        logo.href = user ? '/dashboard.html' : '/';
         logo.addEventListener('click', (e) => {
           e.preventDefault();
           if (user) {
-            window.location.href = '/dashboard-home.html';
+            window.location.href = '/dashboard.html';
           } else {
             window.location.href = '/';
           }
@@ -257,6 +390,10 @@
 
       window.addEventListener('scroll', () => document.getElementById('navbar')?.classList.toggle('scrolled', window.scrollY > 20));
       document.getElementById('logoutBtn').style.display = 'inline-flex';
+      const user = Auth.getUser();
+      if (user?.isAdmin || user?.isSuperAdmin) {
+        document.getElementById('adminBanner')?.classList.remove('hide');
+      }
 
       const res = await refreshDashboardSummary();
       if (!res) return;
@@ -266,26 +403,181 @@
     function renderDashboard() {
       const u = data.user;
       const s = data.stats;
+      const root = document.getElementById('dashContent');
+      if (!root) return;
 
-      document.getElementById('greeting').textContent = `Hello, ${u.name || u.email}`;
-      const role = u.isSuperAdmin ? 'Super Admin' : u.isAdmin ? 'Admin' : u.role || 'Bidder';
-      document.getElementById('subtitle').textContent = `${role} · Trust Score: ${u.trustScore || 100}`;
+      updateGreeting(u);
+      updateStats(u);
+      updateCampusBadge(u);
+      updateWatchlistSubline(data.watchlist || []);
 
-      let html = '';
+      if (!dashboardRendered) {
+        root.innerHTML = `
+          <div id="dashboardSections">
+            ${renderActivitySection(true)}
+            ${renderEndingSoonSection(true)}
+            ${renderRecommendedSection(true)}
+            ${renderRecentlyViewedSection(true)}
+            <section id="walletSection" class="section reveal reveal-delay-1">
+              <div class="two-col">
+                <div id="walletCardSection" class="dashboard-panel">${renderWalletCard(u, s)}</div>
+                <div id="walletHistorySection" class="dashboard-panel">${renderWalletHistorySection(data.walletHistory || [])}</div>
+              </div>
+            </section>
+            <section id="statsSection" class="section reveal reveal-delay-2">
+              <div class="dashboard-panel">
+                <div class="dash-section-header" style="margin-bottom:var(--space-4);">
+                  <div>
+                    <h2 style="margin:0;">Your Snapshot</h2>
+                    <p class="text-muted text-sm">Activity, listings, and account summary</p>
+                  </div>
+                </div>
+                <div class="stat-grid">${renderStats(u, s)}</div>
+              </div>
+            </section>
+            ${u.isAdmin || u.isSuperAdmin ? `<section id="adminWorkspaceSection" class="section reveal reveal-delay-2"><div class="dashboard-panel">${renderAdminWorkspaceSection(u)}</div></section>` : ''}
+            ${renderListingsSection(true)}
+            ${renderRecentBidsSection(true)}
+            ${renderNotificationsSection(true)}
+          </div>`;
+        dashboardRendered = true;
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
+        }, { threshold: 0.1 });
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+        return;
+      }
 
-      html += `<div class="wallet-card reveal" style="margin-bottom:var(--space-6);">
+      updateDashboardInPlace();
+    }
+
+    function renderActivitySection(animate = true) {
+      const items = (dashboardCollections.bids || [])
+        .filter((bid) => bid.auctionStatus === 'active' || bid.auctionStatus === 'closed')
+        .slice(0, 4);
+      const empty = !items.length ? '<div class="empty-state" style="grid-column:1/-1;"><h3>No activity yet</h3><p>Browse auctions to get started</p><a href="explore.html" class="btn btn-primary">Browse Auctions →</a></div>' : '';
+      const cards = items.map((item) => {
+        const isClosed = item.auctionStatus === 'closed';
+        const isWinningClosed = isClosed && item.winnerEmail === data?.user?.email;
+        const statusClass = isWinningClosed || !isClosed ? 'winning' : 'outbid';
+        const label = isWinningClosed ? 'Won' : isClosed ? 'Closed' : 'Live';
+        const meta = isWinningClosed
+          ? 'You won this auction. Open the receipt or continue the handoff.'
+          : isClosed
+            ? 'This auction closed. Open the item to review the result.'
+            : `Last bid: ${new Date(item.placedAt).toLocaleString('en-IN')}`;
+        const actionText = isWinningClosed ? 'Continue handoff' : 'Open item';
+        const href = isWinningClosed ? `/winner-confirmation.html?id=${item.auctionId}` : `/item-detail.html?id=${item.auctionId}`;
+        return `
+          <div class="activity-card ${statusClass}">
+            <span class="activity-label">${label}</span>
+            <div class="activity-card-title">${escapeHtml(item.auctionTitle || 'Auction')}</div>
+            <div class="activity-card-price">${UI.formatPrice(item.amount || item.currentBid || 0)}</div>
+            <div class="activity-meta">${meta}</div>
+            <a class="btn btn-sm ${statusClass === 'outbid' ? 'btn-secondary' : 'btn-primary'}" href="${href}" style="width:fit-content;">${actionText}</a>
+          </div>
+        `;
+      }).join('');
+      return `<section id="activitySection" class="section ${animate ? 'reveal' : ''}">
+        <div class="section-header">
+          <div>
+            <h2>Your Activity</h2>
+            <p>Only the bids and listings that still need your attention.</p>
+          </div>
+          <a href="explore.html" class="btn btn-ghost btn-sm">Browse Auctions</a>
+        </div>
+        <div class="activity-strip" id="activityStrip">${cards || ''}${empty}</div>
+        <div class="empty-state hide" id="activityEmpty">
+          <h3>No activity yet</h3>
+          <p>Browse auctions to get started</p>
+          <a href="explore.html" class="btn btn-primary">Browse Auctions →</a>
+        </div>
+      </section>`;
+    }
+
+    function renderEndingSoonSection(animate = true) {
+      const auctions = dashboardCollections.endingSoon || [];
+      if (!auctions.length) {
+        return `<section id="endingSoonSection" class="section ${animate ? 'reveal reveal-delay-1' : ''}">
+          <div class="section-header"><div><h2>Ending Soon</h2><p>The live auctions closing first across Gavel.</p></div></div>
+          <div class="ending-soon-strip" id="endingSoonStrip"><div class="empty-state" style="grid-column:1/-1;"><h3>No live auctions yet</h3><p>Ending-soon items will appear here automatically.</p></div></div>
+        </section>`;
+      }
+      return `<section id="endingSoonSection" class="section ${animate ? 'reveal reveal-delay-1' : ''}">
+        <div class="section-header">
+          <div><h2>Ending Soon</h2><p>The live auctions closing first across Gavel.</p></div>
+          <a href="auction.html" class="btn btn-ghost btn-sm">Open live auctions</a>
+        </div>
+        <div class="ending-soon-strip" id="endingSoonStrip">${auctions.slice(0, 4).map((auction) => UI.renderAuctionCard(auction)).join('')}</div>
+      </section>`;
+    }
+
+    function renderRecommendedSection(animate = true) {
+      const auctions = dashboardCollections.recommended || [];
+      if (!auctions.length) {
+        return `<section id="recommendedSection" class="section ${animate ? 'reveal reveal-delay-2' : ''}">
+          <div class="section-header"><div><h2 class="font-heading">Picked for you</h2><p>Fresh listings matched from your browsing and bidding patterns.</p></div></div>
+          <div class="recommended-grid" id="recommendedGrid"><div class="empty-state" style="grid-column:1/-1;"><h3>No recommendations yet</h3><p>Browse explore to build your feed.</p></div></div>
+        </section>`;
+      }
+      return `<section id="recommendedSection" class="section ${animate ? 'reveal reveal-delay-2' : ''}">
+        <div class="section-header">
+          <div><h2 class="font-heading">Picked for you</h2><p>Fresh listings matched from your browsing and bidding patterns.</p></div>
+          <a href="explore.html" class="btn btn-ghost btn-sm">Explore</a>
+        </div>
+        <div class="recommended-grid" id="recommendedGrid">${auctions.slice(0, 8).map((auction) => UI.renderAuctionCard(auction)).join('')}</div>
+      </section>`;
+    }
+
+    function renderRecentlyViewedSection(animate = true) {
+      const recent = JSON.parse(localStorage.getItem('gavel_recently_viewed') || '[]').slice(0, 4);
+      if (!recent.length) return '';
+      return `<section id="recentlyViewedSection" class="section ${animate ? 'reveal reveal-delay-2' : ''}">
+        <div class="section-header">
+          <div><h2>Recently Viewed</h2><p>Quick return to products you opened recently.</p></div>
+        </div>
+        <div class="recently-viewed-strip" id="recentlyViewedStrip">${recent.map((item) => `
+          <a href="/item-detail.html?id=${item.id}" class="recently-viewed-card" style="text-decoration:none;">
+            <div class="recently-viewed-media" style="${item.image ? `background-image:url('${item.image}')` : ''}"></div>
+            <div class="activity-card-title">${escapeHtml(item.name || 'Listing')}</div>
+            <div class="activity-meta">Last seen bid ${UI.formatPrice(item.bid || 0)}</div>
+            <span class="btn btn-ghost btn-sm" style="width:fit-content;">Open again</span>
+          </a>
+        `).join('')}</div>
+      </section>`;
+    }
+
+    function isVisibleListing(item) {
+      const status = String(item?.status || '').toLowerCase();
+      if (['closed', 'cancelled', 'rejected', 'draft'].includes(status)) return false;
+      if (status === 'active' && item.endTime && new Date(item.endTime).getTime() <= Date.now()) return false;
+      return true;
+    }
+
+    function renderWalletCard(u, s) {
+      return `<div class="wallet-card">
         <div>
           <div class="wallet-label">Wallet Balance</div>
           <div class="wallet-balance">${UI.formatPrice(u.walletBalance || 0)}</div>
-          <div class="wallet-note">Wallet top-ups flow into the Gavel treasury first. Available to withdraw: ${UI.formatPrice((u.availableToWithdraw ?? s.availableToWithdraw) || 0)}. Active auction commitments locked: ${UI.formatPrice((u.committedBidBalance ?? s.committedBidBalance) || 0)}.</div>
+          <div class="wallet-note">Top-ups and withdrawals are real wallet movements. Reserve commitments for auctions you are currently bidding on are not spent yet, but they reduce what you can withdraw. Available to withdraw: <span id="availableToWithdrawValue">${UI.formatPrice((u.availableToWithdraw ?? s.availableToWithdraw) || 0)}</span>. Active commitments: <span id="committedBidBalanceValue">${UI.formatPrice((u.committedBidBalance ?? s.committedBidBalance) || 0)}</span>.</div>
         </div>
         <div class="wallet-actions">
           <button class="btn btn-sm" onclick="addFunds()">Add Funds</button>
           <button class="btn btn-sm" onclick="withdrawFunds()">Withdraw</button>
         </div>
       </div>`;
+    }
 
-      html += `<div class="stat-grid reveal reveal-delay-1">`;
+    function renderWalletHistorySection(items) {
+      return `<div class="dash-section-header" style="margin-bottom:var(--space-4);">
+        <h2>Transaction History</h2>
+        <p class="text-muted text-sm">Credits, debits, and escrow changes</p>
+      </div>
+      <div id="walletHistoryList">${renderWalletHistory(items)}</div>`;
+    }
+
+    function renderStats(u, s) {
+      let html = '';
       html += statCard('Active Listings', s.activeListings, 'text-olive');
       html += statCard('Pending Review', s.pendingListings, 'text-gold');
       html += statCard('Sold', s.soldListings, 'text-olive');
@@ -296,85 +588,236 @@
         html += statCard('Total Users', s.totalUsers, 'text-gold');
         html += statCard('Total Auctions', s.totalAuctions, 'text-gold');
       }
+      return html;
+    }
+
+    function renderAdminWorkspaceSection(u) {
+      let html = '<h3>Admin Workspace</h3><div>';
+      if (data.adminWorkspace) html += `<span class="badge badge-pending" style="margin-right:var(--space-3);">${data.adminWorkspace.assignedReviews} assigned review${data.adminWorkspace.assignedReviews !== 1 ? 's' : ''}</span>`;
+      html += `<a href="admin-dashboard.html" class="admin-link">Admin Dashboard</a>
+        <a href="admin-dashboard.html#pending" class="admin-link">Review Queue</a>`;
+      if (u.isSuperAdmin) html += `<a href="admin-dashboard.html#wallet-deposits" class="admin-link">Wallet Deposits</a><a href="admin-dashboard.html#team" class="admin-link">Team Overview</a>`;
       html += `</div>`;
+      return html;
+    }
 
-      if (u.isAdmin || u.isSuperAdmin) {
-        html += `<div class="admin-panel reveal">
-          <h3>Admin Workspace</h3>
-          <div>`;
-        if (data.adminWorkspace) html += `<span class="badge badge-pending" style="margin-right:var(--space-3);">${data.adminWorkspace.assignedReviews} assigned review${data.adminWorkspace.assignedReviews !== 1 ? 's' : ''}</span>`;
-        html += `<a href="admin-dashboard.html" class="admin-link">Admin Dashboard</a>
-          <a href="admin-dashboard.html#pending" class="admin-link">Review Queue</a>`;
-        if (u.isSuperAdmin) html += `<a href="admin-dashboard.html#team" class="admin-link">Team Overview</a>`;
-        html += `</div></div>`;
+    function renderListingsSection(animate = true) {
+      const visibleListings = (data.listings || []).filter(isVisibleListing).slice(0, 5);
+      if (!visibleListings.length) return '';
+      let html = `<div id="listingsSection" class="dash-section ${animate ? 'reveal reveal-delay-2' : ''}">
+        <div class="dash-section-header"><h2>My Listings</h2><a href="my-products.html">View all</a></div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-3);">`;
+      visibleListings.forEach((l) => {
+        const img = (l.images || [])[0] || '';
+        const statusBadge = l.status === 'active' ? '<span class="badge badge-live">Live</span>' :
+          l.status === 'pending_review' || l.status === 'under_review' ? '<span class="badge badge-pending">Pending</span>' :
+          l.status === 'rejected' ? '<span class="badge badge-closed">Rejected</span>' :
+          '<span class="badge badge-closed">Closed</span>';
+        html += `<div class="listing-item">
+          ${img ? `<img src="${img}" alt="${l.title}" onerror="this.style.display='none'">` : '<div style="width:56px;height:56px;border-radius:var(--radius-md);background:var(--sand);"></div>'}
+          <div class="listing-item-body">
+            <div class="listing-item-title">${l.title} ${statusBadge}</div>
+            <div class="listing-item-meta">${UI.formatPrice(l.currentBid)} · ${l.category || 'General'}</div>
+          </div>
+          <a href="item-detail.html?id=${l.id}" class="btn btn-ghost btn-sm">View</a>
+        </div>`;
+      });
+      html += `</div></div>`;
+      return html;
+    }
+
+    function renderRecentBidsSection(animate = true) {
+      const recent = (data.recentBids || []).slice(0, 5);
+      if (!recent.length) return '';
+      let html = `<div id="recentBidsSection" class="dash-section ${animate ? 'reveal reveal-delay-2' : ''}">
+        <div class="dash-section-header"><h2>Recent Bids</h2></div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-3);">`;
+      recent.forEach((b) => {
+        html += `<div class="bid-item">
+          <div class="bid-item-left">
+            <div class="bid-item-title"><a href="item-detail.html?id=${b.auctionId}" style="color:var(--text-primary);">${b.title}</a></div>
+            <div class="bid-item-time">${UI.formatTimeShort(b.placedAt)}</div>
+          </div>
+          <div class="bid-item-amount">${UI.formatPrice(b.amount)}</div>
+        </div>`;
+      });
+      html += `</div></div>`;
+      return html;
+    }
+
+    function renderNotificationsSection(animate = true) {
+      const notes = data.notifications || [];
+      if (!notes.length) return '';
+      let html = `<div id="notificationsSection" class="dash-section ${animate ? 'reveal reveal-delay-2' : ''}">
+        <div class="dash-section-header"><h2>Notifications</h2><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Mark all read</button></div>
+        <div class="notif-list">`;
+      notes.slice(0, 8).forEach((n) => {
+        html += `<div class="notif-item ${n.read ? '' : 'unread'}">
+          <div class="notif-dot"></div>
+          <div class="notif-body">
+            <div class="notif-title">${n.title || 'Notification'}</div>
+            <div class="notif-msg">${n.message || ''}</div>
+            ${n.actionUrl ? `<a href="${n.actionUrl}" style="font-size:var(--text-xs);color:var(--olive);font-weight:600;">View details</a>` : ''}
+            <div class="notif-time">${n.createdAt ? UI.formatTimeShort(n.createdAt) : ''}</div>
+          </div>
+        </div>`;
+      });
+      html += `</div></div>`;
+      return html;
+    }
+
+    function updateDashboardInPlace() {
+      const u = data.user;
+      const s = data.stats;
+      updateGreeting(u);
+      updateStats(u);
+      updateCampusBadge(u);
+      updateWatchlistSubline(data.watchlist || []);
+      const activitySection = document.getElementById('activitySection');
+      const endingSoonSection = document.getElementById('endingSoonSection');
+      const recommendedSection = document.getElementById('recommendedSection');
+      const recentlyViewedSection = document.getElementById('recentlyViewedSection');
+      const walletCard = document.getElementById('walletCardSection');
+      const walletHistory = document.getElementById('walletHistoryList');
+      const statsSection = document.getElementById('statsSection');
+      const adminSection = document.getElementById('adminWorkspaceSection');
+      const listingsSection = document.getElementById('listingsSection');
+      const bidsSection = document.getElementById('recentBidsSection');
+      const notificationsSection = document.getElementById('notificationsSection');
+
+      const walletBalanceEl = walletCard?.querySelector('.wallet-balance');
+      if (walletBalanceEl) walletBalanceEl.textContent = UI.formatPrice(u.walletBalance || 0);
+      const availableEl = document.getElementById('availableToWithdrawValue');
+      if (availableEl) availableEl.textContent = UI.formatPrice((u.availableToWithdraw ?? s.availableToWithdraw) || 0);
+      const committedEl = document.getElementById('committedBidBalanceValue');
+      if (committedEl) committedEl.textContent = UI.formatPrice((u.committedBidBalance ?? s.committedBidBalance) || 0);
+
+      syncSection('activitySection', renderActivitySection(false), activitySection);
+      syncSection('endingSoonSection', renderEndingSoonSection(false), endingSoonSection);
+      syncSection('recommendedSection', renderRecommendedSection(false), recommendedSection);
+      syncSection('recentlyViewedSection', renderRecentlyViewedSection(false), recentlyViewedSection);
+      if (walletHistory) walletHistory.innerHTML = renderWalletHistory(data.walletHistory || []);
+      const statsGrid = statsSection?.querySelector('.stat-grid');
+      if (statsGrid) statsGrid.innerHTML = renderStats(u, s);
+      if (adminSection && (u.isAdmin || u.isSuperAdmin)) adminSection.innerHTML = renderAdminWorkspaceSection(u);
+      syncSection('listingsSection', renderListingsSection(false), listingsSection);
+      syncSection('recentBidsSection', renderRecentBidsSection(false), bidsSection);
+      syncSection('notificationsSection', renderNotificationsSection(false), notificationsSection);
+    }
+
+    function syncSection(id, html, existingNode = null) {
+      const current = existingNode || document.getElementById(id);
+      const host = document.getElementById('dashboardSections');
+      if (html) {
+        if (current) current.outerHTML = html;
+        else host?.insertAdjacentHTML('beforeend', html);
+      } else if (current) {
+        current.remove();
       }
+    }
 
-      if (data.listings && data.listings.length) {
-        html += `<div class="dash-section reveal">
-          <div class="dash-section-header"><h2>My Listings</h2><a href="my-products.html">View all</a></div>
-          <div style="display:flex;flex-direction:column;gap:var(--space-3);">`;
-        data.listings.slice(0, 5).forEach(l => {
-          const img = (l.images || [])[0] || '';
-          const statusBadge = l.status === 'active' ? '<span class="badge badge-live">Live</span>' :
-            l.status === 'pending_review' || l.status === 'under_review' ? '<span class="badge badge-pending">Pending</span>' :
-            l.status === 'rejected' ? '<span class="badge badge-closed">Rejected</span>' :
-            '<span class="badge badge-closed">Closed</span>';
-          html += `<div class="listing-item">
-            ${img ? `<img src="${img}" alt="${l.title}" onerror="this.style.display='none'">` : '<div style="width:56px;height:56px;border-radius:var(--radius-md);background:var(--sand);"></div>'}
-            <div class="listing-item-body">
-              <div class="listing-item-title">${l.title} ${statusBadge}</div>
-              <div class="listing-item-meta">${UI.formatPrice(l.currentBid)} · ${l.category || 'General'}</div>
-            </div>
-            <a href="item-detail.html?id=${l.id}" class="btn btn-ghost btn-sm">View</a>
-          </div>`;
-        });
-        html += `</div></div>`;
+    function updateGreeting(currentUser) {
+      const hour = new Date().getHours();
+      let greeting = 'Good evening';
+      if (hour < 12) greeting = 'Good morning';
+      else if (hour < 17) greeting = 'Good afternoon';
+      const name = currentUser?.name ? currentUser.name.split(' ')[0] : (currentUser?.email || 'there').split('@')[0];
+      const el = document.getElementById('greetingText');
+      if (el) el.textContent = `${greeting}, ${name}`;
+    }
+
+    function updateStats(summaryUser) {
+      const stats = data?.stats || {};
+      const walletEl = document.getElementById('walletPill');
+      const activeBidsEl = document.getElementById('activeBidsPill');
+      const itemsSoldEl = document.getElementById('itemsSoldPill');
+      if (walletEl) {
+        const valueEl = walletEl.querySelector('.stat-pill-value');
+        if (valueEl) valueEl.textContent = UI.formatPrice(summaryUser?.walletBalance || 0);
+        walletEl.title = `Available to withdraw: ${UI.formatPrice(summaryUser?.availableToWithdraw || 0)} · Active commitments: ${UI.formatPrice(summaryUser?.committedBidBalance || 0)}`;
       }
-
-      if (data.recentBids && data.recentBids.length) {
-        html += `<div class="dash-section reveal">
-          <div class="dash-section-header"><h2>Recent Bids</h2></div>
-          <div style="display:flex;flex-direction:column;gap:var(--space-3);">`;
-        data.recentBids.slice(0, 5).forEach(b => {
-          html += `<div class="bid-item">
-            <div class="bid-item-left">
-              <div class="bid-item-title"><a href="item-detail.html?id=${b.auctionId}" style="color:var(--text-primary);">${b.title}</a></div>
-              <div class="bid-item-time">${UI.formatTimeShort(b.placedAt)}</div>
-            </div>
-            <div class="bid-item-amount">${UI.formatPrice(b.amount)}</div>
-          </div>`;
-        });
-        html += `</div></div>`;
+      if (activeBidsEl) {
+        const valueEl = activeBidsEl.querySelector('.stat-pill-value');
+        if (valueEl) valueEl.textContent = stats.activeBids || 0;
       }
-
-      if (data.notifications && data.notifications.length) {
-        html += `<div class="dash-section reveal">
-          <div class="dash-section-header"><h2>Notifications</h2><button class="btn btn-ghost btn-sm" onclick="markAllRead()">Mark all read</button></div>
-          <div class="notif-list">`;
-        data.notifications.slice(0, 8).forEach(n => {
-          html += `<div class="notif-item ${n.read ? '' : 'unread'}">
-            <div class="notif-dot"></div>
-            <div class="notif-body">
-              <div class="notif-title">${n.title || 'Notification'}</div>
-              <div class="notif-msg">${n.message || ''}</div>
-              ${n.actionUrl ? `<a href="${n.actionUrl}" style="font-size:var(--text-xs);color:var(--olive);font-weight:600;">View details</a>` : ''}
-              <div class="notif-time">${n.createdAt ? UI.formatTimeShort(n.createdAt) : ''}</div>
-            </div>
-          </div>`;
-        });
-        html += `</div></div>`;
+      if (itemsSoldEl) {
+        const valueEl = itemsSoldEl.querySelector('.stat-pill-value');
+        if (valueEl) valueEl.textContent = stats.soldListings || stats.closedListings || 0;
       }
+    }
 
-      document.getElementById('dashContent').innerHTML = html;
+    function updateCampusBadge(summaryUser) {
+      const badge = document.getElementById('campusBadge');
+      if (!badge) return;
+      const college = String(summaryUser?.college || '').trim();
+      if (!college) {
+        badge.classList.add('hide');
+        badge.textContent = '';
+        return;
+      }
+      badge.textContent = college;
+      badge.classList.remove('hide');
+    }
 
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
-      }, { threshold: 0.1 });
-      document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+    function updateWatchlistSubline(watchlist) {
+      const subline = document.getElementById('watchlistSubline');
+      if (!subline) return;
+      const count = Array.isArray(watchlist) ? watchlist.length : 0;
+      if (!count) {
+        subline.textContent = 'No watched auctions yet. Explore listings and save the ones you want to track.';
+        return;
+      }
+      subline.textContent = `${count} watched auction${count !== 1 ? 's' : ''} ready for quick follow-up.`;
     }
 
     function statCard(label, value, colorClass) {
       return `<div class="stat-card"><div class="stat-card-label">${label}</div><div class="stat-card-value ${colorClass}">${value !== undefined ? value : '—'}</div></div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderWalletHistory(items) {
+      if (!items || !items.length) {
+        return `<div class="wallet-history-empty">No wallet activity yet. Your top-ups, withdrawals, and escrow changes will show up here.</div>`;
+      }
+
+      return `<div class="wallet-history">${items.map((tx) => {
+        const amount = Number(tx.amount || 0);
+        const amountLabel = tx.direction === 'debit'
+          ? `-${UI.formatPrice(amount)}`
+          : tx.direction === 'credit'
+            ? `+${UI.formatPrice(amount)}`
+            : UI.formatPrice(amount);
+        const badgeClass = tx.direction || 'info';
+        const balanceLine = Number.isFinite(Number(tx.balanceAfter))
+          ? `<div class="wallet-tx-meta">Balance after: ${UI.formatPrice(tx.balanceAfter)}</div>`
+          : '';
+        const metaBits = [
+          tx.auctionTitle ? `Auction: ${tx.auctionTitle}` : '',
+          tx.counterpartyName ? `Counterparty: ${tx.counterpartyName}` : '',
+          tx.createdAt ? UI.formatTimeShort(tx.createdAt) : ''
+        ].filter(Boolean);
+
+        return `<article class="wallet-tx">
+          <div class="wallet-tx-main">
+            <div class="wallet-tx-title">${escapeHtml(tx.title || 'Wallet activity')}</div>
+            <div class="wallet-tx-details">${escapeHtml(tx.details || '')}</div>
+            <div class="wallet-tx-meta">${escapeHtml(metaBits.join(' · '))}</div>
+            ${balanceLine}
+          </div>
+          <div class="wallet-tx-side">
+            <span class="wallet-tx-badge ${badgeClass}">${tx.direction || 'info'}</span>
+            <div class="wallet-tx-amount">${amountLabel}</div>
+          </div>
+        </article>`;
+      }).join('')}</div>`;
     }
 
     async function addFunds() {

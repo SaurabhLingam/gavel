@@ -55,8 +55,7 @@
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       const user = await Auth.init();
-      // DASHBOARD-HOME ADDITION: redirect to dashboard-home.html
-      if (user) { window.location.href = '/dashboard-home.html'; return; }
+      if (user) { window.location.href = '/dashboard.html'; return; }
 
       // Google Sign-In
       const configRes = await api.get('/config');

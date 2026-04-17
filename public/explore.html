@@ -546,7 +546,7 @@
       <a href="login.html" class="btn btn-ghost btn-sm" id="loginBtn">Log in</a>
       <a href="signup.html" class="btn btn-primary btn-sm" id="signupBtn">Get Started</a>
       <a href="chats.html" class="btn btn-ghost btn-sm hide" id="messagesBtn">Messages</a>
-      <a href="dashboard-home.html" class="btn btn-primary btn-sm hide" id="dashboardBtn">Dashboard</a>
+      <a href="dashboard.html" class="btn btn-primary btn-sm hide" id="dashboardBtn">Dashboard</a>
     </div>
   </div></nav>
 
@@ -639,11 +639,11 @@
       const logos = document.querySelectorAll('.navbar-brand');
       const user = Auth.getUser();
       logos.forEach(logo => {
-        logo.href = user ? '/dashboard-home.html' : '/';
+        logo.href = user ? '/dashboard.html' : '/';
         logo.addEventListener('click', (e) => {
           e.preventDefault();
           if (user) {
-            window.location.href = '/dashboard-home.html';
+            window.location.href = '/dashboard.html';
           } else {
             window.location.href = '/';
           }
@@ -755,9 +755,9 @@
               <div class="card-overlay">
                 <div class="item-meta">${statusBadge}</div>
                 <div class="item-title">${a.title}</div>
-                <div class="item-price">${UI.formatPrice(a.currentBid)}</div>
+                <div class="item-price card-current-bid">${UI.formatPrice(a.currentBid)}</div>
                 <div class="item-meta">
-                  <span>${a.bidCount || 0} bids</span>
+                  <span class="card-bid-count">${a.bidCount || 0} bids</span>
                   ${a.endTime ? `<span class="timer-pill ${isUrgent ? 'urgent' : ''}" data-countdown="${a.endTime}">${UI.formatTime(a.endTime)}</span>` : ''}
                 </div>
               </div>
@@ -886,9 +886,9 @@
             <div class="sfi-info">
               <div class="sfi-meta">${statusBadge} <span style="opacity:0.7;">${a.category || ''}</span></div>
               <div class="sfi-title">${a.title}</div>
-              <div class="sfi-price">${UI.formatPrice(a.currentBid)}</div>
+              <div class="sfi-price sfi-current-bid">${UI.formatPrice(a.currentBid)}</div>
               <div class="sfi-meta">
-                <span>${a.bidCount || 0} bids</span>
+                <span class="sfi-bid-count">${a.bidCount || 0} bids</span>
                 ${a.endTime ? `<span class="timer-pill ${isUrgent ? 'urgent' : ''}" data-countdown="${a.endTime}">${UI.formatTime(a.endTime)}</span>` : ''}
               </div>
             </div>
@@ -1059,6 +1059,38 @@
     }
 
     // ── WEBSOCKET ──
+    function pulseBidElement(el) {
+      if (!el) return;
+      el.style.animation = 'none';
+      void el.offsetWidth;
+      el.style.animation = 'bidPulse 0.4s ease';
+      setTimeout(() => { el.style.animation = ''; }, 500);
+    }
+
+    function updateExploreBidState(msg) {
+      const item = filtered.find((entry) => String(entry.id) === String(msg.itemId));
+      if (item) {
+        item.currentBid = Number(msg.newBid || item.currentBid || 0);
+        if (typeof msg.bidCount === 'number') item.bidCount = msg.bidCount;
+      }
+      const selectors = [
+        `[data-id="${msg.itemId}"] .card-current-bid`,
+        `[data-id="${msg.itemId}"] .sfi-current-bid`
+      ];
+      selectors.forEach((selector) => {
+        document.querySelectorAll(selector).forEach((el) => {
+          el.textContent = UI.formatPrice(msg.newBid);
+          pulseBidElement(el);
+        });
+      });
+      if (typeof msg.bidCount === 'number') {
+        document.querySelectorAll(`[data-id="${msg.itemId}"] .card-bid-count, [data-id="${msg.itemId}"] .sfi-bid-count`).forEach((el) => {
+          el.textContent = `${msg.bidCount} bids`;
+          pulseBidElement(el);
+        });
+      }
+    }
+
     function connectWS(auctionId) {
       disconnectWS();
       if (!auctionId) return;
@@ -1077,8 +1109,7 @@
         try {
           const msg = JSON.parse(e.data);
           if (msg.type === 'bid_update') {
-            const priceEl = document.querySelector('.sfi-price');
-            if (priceEl) { priceEl.textContent = UI.formatPrice(msg.newBid); priceEl.style.animation = 'bidPulse 0.4s ease'; setTimeout(() => priceEl.style.animation = '', 500); }
+            updateExploreBidState(msg);
           }
           if (msg.type === 'auction_closed') {
             UI.toast('Auction has ended!', 'info');

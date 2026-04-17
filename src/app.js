@@ -52,7 +52,7 @@ const supabaseKey = SUPABASE_SERVICE_KEY && !SUPABASE_SERVICE_KEY.startsWith('sb
 const supabase = (SUPABASE_URL && supabaseKey) ? createClient(SUPABASE_URL, supabaseKey) : null;
 
 const redirectIfLoggedIn = (req, res, next) => {
-    if (req.cookies?.sb_access_token || req.cookies?.jwt_token) return res.redirect('/');
+    if (req.cookies?.sb_access_token || req.cookies?.jwt_token) return res.redirect('/dashboard.html');
     next();
 };
 app.get('/login.html', redirectIfLoggedIn, (req, res, next) => next());
@@ -207,7 +207,7 @@ app.get('/auth/callback', async (req, res) => {
          }
          res.cookie('sb_access_token', access_token, cookieOptsShort);
 
-         res.redirect('/dashboard-home.html'); /* DASHBOARD-HOME ADDITION */
+         res.redirect('/dashboard.html');
      } catch (e) {
          console.error('Auth callback error:', e);
          res.redirect('/login.html');

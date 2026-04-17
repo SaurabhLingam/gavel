@@ -372,11 +372,11 @@
       const user = Auth.getUser();
       logos.forEach(logo => {
         // Update href for right-click/open in new tab
-        logo.href = user ? '/dashboard-home.html' : '/';
+        logo.href = user ? '/dashboard.html' : '/';
         logo.addEventListener('click', (e) => {
           e.preventDefault();
           if (user) {
-            window.location.href = '/dashboard-home.html';
+            window.location.href = '/dashboard.html';
           } else {
             window.location.href = '/';
           }
@@ -413,7 +413,7 @@
             </p>
             <div class="hero-cta-reveal btn-group" style="display:flex;gap:var(--space-3);flex-wrap:wrap;">
               <a href="explore.html" class="btn btn-lg" style="background:var(--forest);color:var(--gold);">Browse Auctions</a>
-              <a href="dashboard-home.html" class="btn btn-lg" style="background:transparent;color:var(--forest);border:1.5px solid var(--forest);">My Dashboard</a>
+              <a href="dashboard.html" class="btn btn-lg" style="background:transparent;color:var(--forest);border:1.5px solid var(--forest);">My Dashboard</a>
             </div>
           `;
         }

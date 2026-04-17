@@ -178,6 +178,7 @@
                     <div>
                         <div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:4px;">Current Bid</div>
                         <div style="font-size: 1.8rem; font-weight: 800; color: var(--neon-green);" id="short-price">₹0</div>
+                        <div id="short-bid-count" style="margin-top:6px; font-size:0.8rem; color:rgba(255,255,255,0.72);">0 bids</div>
                     </div>
                 </div>
             </div>
@@ -253,6 +254,7 @@
                 // Fetch auction details
                 const res = await fetch(`/api/auction/${id}`);
                 const data = await res.json();
+                let liveBids = [];
 
                 // Populate media
                 const videoArea = document.getElementById('video-area');
@@ -273,6 +275,7 @@
 
                 document.getElementById('short-title').textContent = data.title;
                 document.getElementById('short-price').textContent = `₹${data.currentBid.toLocaleString('en-IN')}`;
+                document.getElementById('short-bid-count').textContent = `${data.bidCount || 0} bids`;
                 
                 document.getElementById('seller-name').textContent = data.sellerEmail.split('@')[0];
                 document.getElementById('seller-avatar').textContent = data.sellerEmail.charAt(0).toUpperCase();
@@ -283,6 +286,7 @@
 
                 const feed = document.getElementById('bids-feed');
                 const renderBids = (items) => {
+                    liveBids = Array.isArray(items) ? items.slice() : [];
                     if(items.length > 0) {
                         feed.innerHTML = items.map(b => `
                             <div class="bid-comment">
@@ -300,6 +304,15 @@
                 };
                 renderBids(bidsData);
 
+                const pulseBidElement = (selector) => {
+                    const el = document.querySelector(selector);
+                    if (!el) return;
+                    el.style.animation = 'none';
+                    void el.offsetWidth;
+                    el.style.animation = 'pulse-op 0.45s ease';
+                    setTimeout(() => { el.style.animation = ''; }, 500);
+                };
+
                 // WebSocket live updates
                 const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
                 const ws = new WebSocket(`${protocol}://${location.host}/ws`);
@@ -309,12 +322,27 @@
                     const msg = JSON.parse(event.data);
                     if (msg.type === 'bid_update' && msg.itemId === id) {
                         document.getElementById('short-price').textContent = `₹${msg.newBid.toLocaleString('en-IN')}`;
-                        
-                        // Refetch bids
-                        const newBidsRes = await fetch(`/api/bid-history/${id}`);
-                        const newBids = await newBidsRes.json();
-                        renderBids(newBids);
-                        feed.scrollTop = 0;
+                        document.getElementById('short-bid-count').textContent = `${msg.bidCount || liveBids.length || 0} bids`;
+                        pulseBidElement('#short-price');
+                        pulseBidElement('#short-bid-count');
+                        if (msg.latestBid) {
+                            const duplicate = liveBids.some((bid) =>
+                                String(bid.bidderName) === String(msg.latestBid.bidderName) &&
+                                Number(bid.amount) === Number(msg.latestBid.amount) &&
+                                Math.abs(new Date(bid.placedAt).getTime() - new Date(msg.latestBid.placedAt).getTime()) < 2000
+                            );
+                            if (!duplicate) {
+                                liveBids.push({
+                                    bidderName: msg.latestBid.bidderName,
+                                    amount: Number(msg.latestBid.amount || 0),
+                                    placedAt: msg.latestBid.placedAt || new Date().toISOString(),
+                                    triggeredSnipe: Boolean(msg.latestBid.triggeredSnipe)
+                                });
+                                liveBids.sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt));
+                                renderBids(liveBids);
+                                feed.scrollTop = 0;
+                            }
+                        }
                     }
                 });
 

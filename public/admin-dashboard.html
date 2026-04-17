@@ -124,6 +124,59 @@
     }
     .admin-mini-metric:last-child { border-bottom:none; }
 
+    .wallet-ledger {
+      display: grid;
+      gap: var(--space-3);
+      margin-top: var(--space-4);
+    }
+    .wallet-ledger-card {
+      background: var(--bg);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-xl);
+      padding: var(--space-4);
+    }
+    .wallet-ledger-topline {
+      display:flex;
+      justify-content:space-between;
+      gap:var(--space-4);
+      align-items:flex-start;
+      margin-bottom: var(--space-2);
+    }
+    .wallet-ledger-title {
+      font-weight: 700;
+      color: var(--text-primary);
+      font-size: var(--text-sm);
+    }
+    .wallet-ledger-meta {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .wallet-ledger-amount {
+      font-family: var(--font-heading);
+      font-size: var(--text-lg);
+      white-space: nowrap;
+    }
+    .wallet-ledger-badge {
+      display:inline-flex;
+      align-items:center;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: var(--text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .wallet-ledger-badge.credit { background: rgba(92,107,79,0.12); color: var(--olive); }
+    .wallet-ledger-badge.debit { background: rgba(224,107,72,0.12); color: var(--ember); }
+    .wallet-ledger-summary {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: var(--space-3);
+      margin-top: var(--space-4);
+    }
+    .wallet-ledger-summary .admin-stat { margin: 0; }
+
     @media (max-width: 768px) {
       .admin-grid { grid-template-columns: repeat(2, 1fr); }
       .user-row { grid-template-columns: 36px 1fr auto; }
@@ -147,11 +200,11 @@
   </div></nav>
 
   <section class="admin-hero">
-    <div class="container">
-      <h1>Admin Dashboard</h1>
-      <p>Manage listings, review submissions, and monitor platform activity</p>
-    </div>
-  </section>
+      <div class="container">
+        <h1>Admin Dashboard</h1>
+        <p>Manage listings, review submissions, and monitor platform activity</p>
+      </div>
+    </section>
 
   <section style="padding:var(--space-8) 0 var(--space-16);">
     <div class="container">
@@ -173,6 +226,8 @@
     let teamData = [];
     let adminNotifications = [];
     let disputeQueue = [];
+    let walletLedger = [];
+    let walletLedgerSummary = {};
 
     document.addEventListener('DOMContentLoaded', async () => {
       await Auth.init();
@@ -194,6 +249,11 @@
       if (Auth.isSuperAdmin()) {
         const team = await api.get('/admin/team-overview');
         if (team && !team.error) teamData = team;
+        const ledger = await api.get('/admin/wallet-ledger');
+        if (ledger && !ledger.error) {
+          walletLedger = Array.isArray(ledger.transactions) ? ledger.transactions : [];
+          walletLedgerSummary = ledger.summary || {};
+        }
       }
 
       renderAdmin(stats, pending, users, logs);
@@ -210,6 +270,12 @@
       html += adminStat('Total Volume', UI.formatPrice(stats?.totalVolume || 0));
       html += adminStat('Admins', stats?.adminCount || 0);
       html += `</div>`;
+
+      if (Auth.isSuperAdmin()) {
+        html += `<div class="admin-action-bar" style="margin-top:var(--space-6);">
+          <a href="#wallet-deposits" class="admin-link">Wallet Deposits</a>
+        </div>`;
+      }
 
       html += `<div class="admin-section" id="pending">`;
       html += `<div class="admin-section-header"><h2>Review Queue</h2>`;
@@ -242,6 +308,44 @@
         html += `<div class="empty-state"><h3>No items pending review</h3><p>All caught up!</p></div>`;
       }
       html += `</div>`;
+
+      if (Auth.isSuperAdmin()) {
+        html += `<div class="admin-section" id="wallet-deposits">
+          <div class="admin-section-header"><h2>Wallet Deposits & Ledger</h2><span class="text-muted text-sm">${walletLedger.length} recent entries</span></div>
+          <div class="wallet-ledger-summary">
+            ${adminStat('Top-ups', walletLedgerSummary.totalDeposits || 0)}
+            ${adminStat('Withdrawals', walletLedgerSummary.totalWithdrawals || 0)}
+            ${adminStat('Escrow Locks', walletLedgerSummary.totalEscrowLocks || 0)}
+            ${adminStat('Escrow Releases', walletLedgerSummary.totalEscrowReleases || 0)}
+          </div>
+          <div class="wallet-ledger">`;
+        if (walletLedger.length) {
+          walletLedger.slice(0, 25).forEach((tx) => {
+            const amount = Number(tx.amount || 0);
+            const amountLabel = tx.direction === 'debit'
+              ? `-${UI.formatPrice(amount)}`
+              : tx.direction === 'credit'
+                ? `+${UI.formatPrice(amount)}`
+                : UI.formatPrice(amount);
+            html += `<article class="wallet-ledger-card">
+              <div class="wallet-ledger-topline">
+                <div>
+                  <div class="wallet-ledger-title">${escapeHtml(tx.title || 'Wallet activity')}${tx.userName ? ` · ${escapeHtml(tx.userName)}` : ''}</div>
+                  <div class="wallet-ledger-meta">${escapeHtml(tx.userEmail || '')}${tx.auctionTitle ? ` · ${escapeHtml(tx.auctionTitle)}` : ''}${tx.createdAt ? ` · ${escapeHtml(UI.formatTimeShort(tx.createdAt))}` : ''}</div>
+                </div>
+                <div style="text-align:right;">
+                  <span class="wallet-ledger-badge ${tx.direction || 'info'}">${escapeHtml(tx.direction || 'info')}</span>
+                  <div class="wallet-ledger-amount">${amountLabel}</div>
+                </div>
+              </div>
+              <div class="wallet-ledger-meta">${escapeHtml(tx.details || '')}</div>
+            </article>`;
+          });
+        } else {
+          html += `<div class="empty-state"><h3>No wallet transactions yet</h3><p>Deposits, withdrawals, and escrow movement will appear here once they happen.</p></div>`;
+        }
+        html += `</div></div>`;
+      }
 
       html += `<div class="admin-two-col">`;
       html += `<div class="admin-panel-card">
@@ -333,6 +437,15 @@
 
     function adminStat(label, value) {
       return `<div class="admin-stat"><div class="admin-stat-label">${label}</div><div class="admin-stat-value">${value}</div></div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     async function reviewItem(id, decision) {

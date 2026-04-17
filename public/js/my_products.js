@@ -71,9 +71,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         try {
             const res = await fetch('/api/my-listings');
             const listings = await res.json();
-            const myItems = listings.filter(item => activeTab === 'active'
-                ? ['active', 'pending_review', 'under_review', 'rejected'].includes(item.status)
-                : item.status === 'closed');
+            const isCurrentListing = (item) => {
+                const status = String(item?.status || '').toLowerCase();
+                if (['closed', 'cancelled', 'draft'].includes(status)) return false;
+                if (status === 'active' && item.endTime && new Date(item.endTime).getTime() <= Date.now()) return false;
+                return ['active', 'pending_review', 'under_review', 'rejected'].includes(status);
+            };
+            const myItems = listings.filter(item => activeTab === 'closed'
+                ? item.status === 'closed'
+                : isCurrentListing(item));
 
             if (myItems.length === 0) {
                 listContainer.innerHTML = activeTab === 'active' ? `

@@ -385,10 +385,10 @@ function renderDetailPanel(item, container) {
             <div style="padding:25px;">
                 ${!item.verified ? `<span style="background:rgba(255,59,48,0.1); color:var(--neon-red); font-size:0.75rem; font-weight:700; padding:4px 8px; border-radius:6px; border:1px solid rgba(255,59,48,0.3); text-transform:uppercase; margin-bottom:15px; display:inline-block;">Unverified Asset</span>` : ''}
                 <h2 style="margin:0 0 10px; font-size:1.5rem;">${safeTitle}</h2>
-                <p style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:20px;">
-                    ${item.bidCount || 0} Trades · Seller: <strong>${safeSeller}</strong>
-                    ${item.category ? `· <span style="background:var(--glass-bg); padding:2px 8px; border-radius:4px;">${safeCategory}</span>` : ''}
-                </p>
+                    <p style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:20px;">
+                        <span id="detail-bid-count">${item.bidCount || 0} Trades</span> · Seller: <strong>${safeSeller}</strong>
+                        ${item.category ? `· <span style="background:var(--glass-bg); padding:2px 8px; border-radius:4px;">${safeCategory}</span>` : ''}
+                    </p>
 
                 <div style="display:flex; justify-content:space-between; align-items:flex-end; padding:20px; background:var(--glass-bg); border-radius:12px; border:1px solid var(--border-color); margin-bottom:25px;">
                     <div>
@@ -429,18 +429,24 @@ function renderDetailPanel(item, container) {
     closeDetailSocket();
     window.detailWs = new WebSocket(`${protocol}://${location.host}/ws`);
     window.detailWs.onopen = () => window.detailWs.send(JSON.stringify({ type: 'watch', itemId: item.id }));
-    window.detailWs.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'bid_update' && msg.itemId === item.id) {
-            const priceEl = document.getElementById('detail-price');
-            if (priceEl) {
-                priceEl.style.transform = 'scale(1.1)';
-                priceEl.style.textShadow = '0 0 10px var(--neon-green)';
-                priceEl.textContent = `₹${msg.newBid.toLocaleString('en-IN')}`;
-                setTimeout(() => { priceEl.style.transform = 'scale(1)'; priceEl.style.textShadow = 'none'; }, 500);
+        window.detailWs.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'bid_update' && msg.itemId === item.id) {
+                const priceEl = document.getElementById('detail-price');
+                const countEl = document.getElementById('detail-bid-count');
+                if (priceEl) {
+                    priceEl.style.transform = 'scale(1.1)';
+                    priceEl.style.textShadow = '0 0 10px var(--neon-green)';
+                    priceEl.textContent = `₹${msg.newBid.toLocaleString('en-IN')}`;
+                    setTimeout(() => { priceEl.style.transform = 'scale(1)'; priceEl.style.textShadow = 'none'; }, 500);
+                }
+                if (countEl && typeof msg.bidCount === 'number') {
+                    countEl.textContent = `${msg.bidCount} Trades`;
+                    countEl.style.animation = 'bidPulse 0.4s ease';
+                    setTimeout(() => { countEl.style.animation = ''; }, 500);
+                }
             }
-        }
-    };
+        };
 }
 
 // ── Detail switch media ────────────────────────────

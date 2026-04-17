@@ -144,6 +144,49 @@
       color: var(--text-secondary);
     }
     .seller-badge strong { color: var(--text-primary); }
+    .live-bid-strip {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-4);
+      padding: var(--space-4);
+      border-radius: var(--radius-xl);
+      border: 1px solid rgba(92,107,79,0.14);
+      background: rgba(92,107,79,0.06);
+      margin-top: var(--space-4);
+    }
+    .live-bid-strip strong {
+      display: block;
+      font-family: var(--font-heading);
+      color: var(--olive);
+      font-size: var(--text-2xl);
+      line-height: 1;
+      margin-top: 4px;
+    }
+    .live-bid-strip .text-muted {
+      margin-top: 0;
+    }
+    .latest-bid-summary {
+      min-width: 0;
+    }
+    .latest-bid-summary p {
+      margin-top: 6px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      font-size: var(--text-sm);
+    }
+    .latest-bid-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(92,107,79,0.10);
+      color: var(--olive);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
     .moderation-card {
       margin-top: var(--space-5);
       padding: var(--space-5);
@@ -197,7 +240,7 @@
         <a href="login.html" class="btn btn-ghost btn-sm" id="loginBtn">Log in</a>
         <a href="signup.html" class="btn btn-primary btn-sm" id="signupBtn">Get Started</a>
         <a href="chats.html" class="btn btn-ghost btn-sm hide" id="messagesBtn">Messages</a>
-        <a href="dashboard-home.html" class="btn btn-primary btn-sm hide" id="dashboardBtn">Dashboard</a>
+        <a href="dashboard.html" class="btn btn-primary btn-sm hide" id="dashboardBtn">Dashboard</a>
       </div>
     </div>
   </nav>
@@ -304,6 +347,13 @@
               <p class="text-muted text-sm" style="margin-top:var(--space-3);" id="timerDisplay">${auction.endTime ? UI.formatTime(auction.endTime) : ''}</p>
               <p class="text-muted text-sm" style="margin-top:var(--space-2);">Minimum next bid: ${UI.formatPrice(minBid)}</p>
               <p class="text-muted text-sm" style="margin-top:var(--space-2);">Reserve escrow on win: ${auction.reservePrice ? UI.formatPrice(auction.reservePrice) : 'No reserve set'}</p>
+              <div class="live-bid-strip">
+                <div class="latest-bid-summary">
+                  <span class="latest-bid-pill">Live bidding</span>
+                  <strong id="bidCountDisplay">${auction.bidCount || 0}</strong>
+                  <p id="latestBidSummary">${bidsCache.length ? 'Loading latest bid activity.' : 'No bids yet. Be the first to move the price.'}</p>
+                </div>
+              </div>
               ${auction.status === 'closed' ? `
                 <div style="display:grid;gap:8px;margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--border-light);">
                   <p class="text-muted text-sm">Secured from buyer wallet: ${UI.formatPrice(auction.settlement?.securedAmount || 0)}</p>
@@ -371,6 +421,7 @@
       `;
 
       renderMedia();
+      syncLiveBidControls();
       if (auction.endTime) {
         setInterval(() => {
           const timer = document.getElementById('timerDisplay');
@@ -429,17 +480,31 @@
 
     async function loadBidHistory() {
       const res = await api.get('/bids/' + auction.id);
-      bidsCache = Array.isArray(res?.bids) ? res.bids : [];
+      bidsCache = Array.isArray(res?.bids)
+        ? res.bids.slice().sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt))
+        : [];
+      if (typeof auction.bidCount !== 'number' || auction.bidCount !== bidsCache.length) {
+        auction.bidCount = bidsCache.length;
+      }
       renderBidHistory();
     }
 
     function renderBidHistory() {
       const list = document.getElementById('bidHistoryList');
+      const bidCount = document.getElementById('bidCountDisplay');
+      const latestSummary = document.getElementById('latestBidSummary');
       if (!list) return;
+      if (bidCount) bidCount.textContent = String(bidsCache.length || auction.bidCount || 0);
       if (!bidsCache.length) {
         list.innerHTML = '<p class="text-muted">No bids yet.</p>';
+        if (latestSummary) latestSummary.textContent = 'No bids yet. Be the first to move the price.';
         drawBidGraph();
         return;
+      }
+
+      const latestBid = bidsCache[bidsCache.length - 1];
+      if (latestSummary && latestBid) {
+        latestSummary.textContent = `${latestBid.bidderName} placed ${UI.formatPrice(latestBid.amount)} at ${new Date(latestBid.placedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
       }
 
       list.innerHTML = bidsCache
@@ -456,6 +521,86 @@
         `)
         .join('');
       drawBidGraph();
+    }
+
+    function syncLiveBidControls() {
+      const currentBid = Number(auction.currentBid || 0);
+      const increment = Number(auction.increment || 500);
+      const nextBid = currentBid + increment;
+      const bidAmountInput = document.getElementById('bidAmount');
+      const autoBidInput = document.getElementById('autoBidMax');
+      if (bidAmountInput) {
+        bidAmountInput.min = String(nextBid);
+        bidAmountInput.step = String(increment);
+        bidAmountInput.value = String(nextBid);
+      }
+      if (autoBidInput) {
+        autoBidInput.min = String(nextBid);
+      }
+      const bidCounter = document.getElementById('bidCountDisplay');
+      if (bidCounter) bidCounter.textContent = String(auction.bidCount || bidsCache.length || 0);
+    }
+
+    function pulseElement(el) {
+      if (!el) return;
+      el.classList.remove('animate-bid');
+      void el.offsetWidth;
+      el.classList.add('animate-bid');
+    }
+
+    function applyLiveBidUpdate(msg, options = {}) {
+      if (!msg || !msg.itemId || String(msg.itemId) !== String(auction.id)) return;
+      const currentBid = Number(msg.newBid || auction.currentBid || 0);
+      auction.currentBid = currentBid;
+      if (typeof msg.bidCount === 'number') auction.bidCount = msg.bidCount;
+      const increment = Number(auction.increment || 500);
+
+      const bidDisplay = document.getElementById('currentBidDisplay');
+      if (bidDisplay) {
+        bidDisplay.textContent = UI.formatPrice(currentBid);
+        pulseElement(bidDisplay);
+      }
+
+      const bidCounter = document.getElementById('bidCountDisplay');
+      if (bidCounter) {
+        bidCounter.textContent = String(auction.bidCount || bidsCache.length || 0);
+        pulseElement(bidCounter);
+      }
+
+      const latestSummary = document.getElementById('latestBidSummary');
+      if (msg.latestBid && latestSummary) {
+        latestSummary.textContent = `${msg.latestBid.bidderName} placed ${UI.formatPrice(msg.latestBid.amount)} at ${new Date(msg.latestBid.placedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`;
+      } else if (latestSummary) {
+        latestSummary.textContent = `Live bid updated to ${UI.formatPrice(currentBid)}.`;
+      }
+
+      const bidAmountInput = document.getElementById('bidAmount');
+      if (bidAmountInput) {
+        const nextBid = currentBid + increment;
+        bidAmountInput.min = String(nextBid);
+        bidAmountInput.step = String(increment);
+        if (!options.fromSubmission) bidAmountInput.value = String(nextBid);
+      }
+
+      if (msg.latestBid) {
+        const nextEntry = {
+          bidderName: msg.latestBid.bidderName,
+          amount: Number(msg.latestBid.amount || currentBid),
+          placedAt: msg.latestBid.placedAt || new Date().toISOString(),
+          triggeredSnipe: Boolean(msg.latestBid.triggeredSnipe)
+        };
+        const duplicate = bidsCache.some((entry) =>
+          String(entry.bidderName) === String(nextEntry.bidderName) &&
+          Number(entry.amount) === Number(nextEntry.amount) &&
+          Math.abs(new Date(entry.placedAt).getTime() - new Date(nextEntry.placedAt).getTime()) < 2000
+        );
+        if (!duplicate) {
+          bidsCache.push(nextEntry);
+          bidsCache.sort((a, b) => new Date(a.placedAt) - new Date(b.placedAt));
+        }
+      }
+
+      renderBidHistory();
     }
 
     function drawBidGraph() {
@@ -568,10 +713,13 @@
         return;
       }
       localStorage.setItem(`gavel_bid_agreement_${auction.id}`, 'true');
-      document.getElementById('currentBidDisplay').textContent = UI.formatPrice(res.newBid);
-      auction.currentBid = res.newBid;
-      document.getElementById('bidAmount').value = res.newBid + Number(auction.increment || 500);
-      await loadBidHistory();
+      applyLiveBidUpdate({
+        itemId: auction.id,
+        newBid: res.newBid,
+        bidCount: res.bidCount,
+        latestBid: res.latestBid
+      }, { fromSubmission: true });
+      syncLiveBidControls();
       UI.toast(res.message || 'Bid placed.', 'success');
     }
 
@@ -815,10 +963,7 @@
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'bid_update') {
-            auction.currentBid = msg.newBid;
-            const bidEl = document.getElementById('currentBidDisplay');
-            if (bidEl) bidEl.textContent = UI.formatPrice(msg.newBid);
-            await loadBidHistory();
+            applyLiveBidUpdate(msg);
           }
         } catch (error) {}
       });

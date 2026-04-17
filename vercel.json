@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://gavel-backend.onrender.com/api/:path*"
+      "destination": "https://gavel-backend-g4dg.onrender.com/api/:path*"
     }
   ]
 }

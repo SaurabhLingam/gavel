@@ -332,7 +332,7 @@
     function connectWS() {
       const token = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('jwt_token='))?.split('=')[1] || '';
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${protocol}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+      ws = new WebSocket(`wss://gavel-backend-g4dg.onrender.com/ws?token=${encodeURIComponent(token)}`);
       const dot = document.getElementById('connDot');
 
       ws.addEventListener('open', () => {

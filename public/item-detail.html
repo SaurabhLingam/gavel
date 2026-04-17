@@ -955,7 +955,7 @@
     function connectWS(id) {
       const token = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('jwt_token='))?.split('=')[1] || '';
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${protocol}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+      ws = new WebSocket(`wss://gavel-backend-g4dg.onrender.com/ws?token=${encodeURIComponent(token)}`);
       ws.addEventListener('open', () => {
         ws.send(JSON.stringify({ type: 'watch', itemId: String(id) }));
       });

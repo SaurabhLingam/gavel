@@ -1096,7 +1096,7 @@
       if (!auctionId) return;
       const token = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('jwt_token='))?.split('=')[1] || '';
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${proto}://${window.location.host}/ws?auctionId=${auctionId}&token=${token}`);
+      ws = new WebSocket(`wss://gavel-backend-g4dg.onrender.com/ws?auctionId=${auctionId}&token=${token}`);
       ws.onopen = () => {
         try {
           ws.send(JSON.stringify({ type: 'watch', itemId: String(auctionId) }));

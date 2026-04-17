@@ -315,7 +315,7 @@
 
                 // WebSocket live updates
                 const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-                const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+                const ws = new WebSocket(`wss://gavel-backend-g4dg.onrender.com/ws`);
                 ws.addEventListener('open', () => ws.send(JSON.stringify({ type: 'watch', itemId: id })));
                 
                 ws.addEventListener('message', async (event) => {
